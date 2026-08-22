@@ -2005,17 +2005,47 @@
   // arbitrary starting phase. A plain 1 s interval lands wherever the first
   // tick happened to fall, so the displayed second could sit up to a full
   // second stale — swamping the sub-100 ms accuracy the sync works to achieve.
-  // Polling cheaply and only rendering when the second actually changes keeps
-  // the flip within one poll interval of the real boundary, and re-aligns
-  // automatically whenever a sync shifts offsetMs.
+  //
+  // Either strategy below re-reads the clock every time (trueNow() is
+  // Date.now() + offsetMs); neither counts seconds itself, so neither can
+  // accumulate drift, and both re-align on their own when a sync shifts
+  // offsetMs or the tab comes back from being throttled.
   let lastRenderedSecond = -1;
-  setInterval(() => {
-    const second = Math.floor((Date.now() + offsetMs) / 1000);
-    if (second !== lastRenderedSecond) {
-      lastRenderedSecond = second;
-      render();
-    }
-  }, 20);
+
+  // ACTIVE: sleep to the next second boundary. One wakeup per second, aimed
+  // at the boundary rather than sampling near it.
+  function scheduleTick() {
+    const delay = 1000 - ((Date.now() + offsetMs) % 1000);
+    setTimeout(() => {
+      // A timer may fire a hair early, and a backgrounded tab may fire it
+      // very late. Recomputing the second from the clock (instead of assuming
+      // the wakeup means a new second) makes both cases self-correcting: if
+      // it fired early the second hasn't turned yet and we simply re-aim,
+      // and without this guard we'd paint the *old* second and then sit stale
+      // for a full second.
+      const second = Math.floor((Date.now() + offsetMs) / 1000);
+      if (second !== lastRenderedSecond) {
+        lastRenderedSecond = second;
+        render();
+      }
+      scheduleTick();
+    }, delay);
+  }
+  scheduleTick();
+
+  // ALTERNATIVE: poll at 50 Hz and render only when the second actually
+  // changes. The flip lands within 20 ms of the boundary, and an abrupt
+  // system-clock jump is noticed within 20 ms rather than at the next
+  // already-scheduled wakeup — at the cost of ~3000 no-op wakeups a minute.
+  // To switch, comment out the scheduleTick() call above and uncomment this.
+  //
+  // setInterval(() => {
+  //   const second = Math.floor((Date.now() + offsetMs) / 1000);
+  //   if (second !== lastRenderedSecond) {
+  //     lastRenderedSecond = second;
+  //     render();
+  //   }
+  // }, 20);
 </script>
 
 </body>
