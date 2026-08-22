@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>World Clock</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --card-border: #2a2e38;
+    --text: #eef0f4;
+    --muted: #8b90a0;
+    --accent: #4da3ff;
+    --warn: #e2a13d;
+    --ok: #4dbf83;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+  }
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 24px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    position: relative;
+  }
+  .status {
+    font-size: 0.85rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .dot.warn { background: var(--warn); }
+  button {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .toggle {
+    display: flex;
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .toggle button {
+    border: none;
+    border-radius: 0;
+  }
+  .toggle button.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* --- Zone manager (dropdown / multi-select) --- */
+  .zone-manager {
+    position: relative;
+  }
+  .zone-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    max-height: min(760px, 85vh);
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+    overflow: hidden;
+  }
+  .zone-popover[hidden] { display: none; }
+  .zone-search-wrap {
+    padding: 10px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .zone-search-wrap input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    outline: none;
+  }
+  .zone-search-wrap input:focus { border-color: var(--accent); }
+  .common-zones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .zone-chip {
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .zone-chip:hover { border-color: var(--accent); }
+  .zone-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .zone-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+  }
+  .zone-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+  .zone-item:hover { background: rgba(255,255,255,0.05); }
+  .zone-item input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+  }
+  .zone-item .zone-id { color: var(--text); }
+  .zone-item .zone-region { color: var(--muted); font-size: 0.75rem; }
+  .zone-empty {
+    padding: 14px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .zone-footer {
+    padding: 8px 10px;
+    border-top: 1px solid var(--card-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .clocks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    max-width: 960px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    min-width: 220px;
+    text-align: center;
+    position: relative;
+  }
+  .card .remove {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .card .remove:hover { color: var(--warn); }
+  .card .label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+  .card .tzid {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .card .time {
+    font-size: 2.4rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+  .card .date {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .card .offsets {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .offset-badge {
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--card-border);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  .empty-state {
+    color: var(--muted);
+    font-size: 0.9rem;
+    padding: 40px 0;
+  }
+  .error-details {
+    display: none;
+    margin-top: 16px;
+    padding: 10px 14px;
+    background: var(--card);
+    border: 1px solid var(--warn);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: var(--warn);
+    max-width: 500px;
+    text-align: left;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .drift { font-variant-numeric: tabular-nums; }
+
+  /* --- Hidden time-source tester / chooser --- */
+  .tester-link {
+    margin-top: 26px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--card-border);
+    cursor: pointer;
+  }
+  .tester-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .tester {
+    margin-top: 16px;
+    width: 100%;
+    max-width: 760px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .tester[hidden] { display: none; }
+  .tester-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .tester-row strong { font-size: 0.85rem; }
+  .tester-hint { font-size: 0.72rem; color: var(--muted); }
+  .source-chooser {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 12px;
+  }
+  .source-chooser label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.8rem;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .source-chooser label:hover { background: rgba(255,255,255,0.05); }
+  .source-chooser input { accent-color: var(--accent); flex-shrink: 0; }
+  .source-chooser .src-note { color: var(--muted); font-size: 0.72rem; }
+  .tester-log {
+    margin: 0;
+    max-height: 280px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre;
+  }
+
+  footer {
+    margin-top: 28px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    max-width: 500px;
+  }
+</style>
+</head>
+<body>
+
+<h1>World Clock</h1>
+
+<div class="controls">
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Syncing...</span>
+  </div>
+  <div class="status drift" id="clockDrift"
+       title="How far this device's own clock is from true time. Positive = device is ahead."></div>
+  <button id="syncBtn">Sync now</button>
+  <div class="toggle">
+    <button id="fmt12" class="active">12h</button>
+    <button id="fmt24">24h</button>
+  </div>
+  <div class="zone-manager">
+    <button id="manageZonesBtn">Manage timezones ▾</button>
+    <div class="zone-popover" id="zonePopover" hidden>
+      <div class="zone-search-wrap">
+        <input type="text" id="zoneSearch" placeholder="Search city, country, or timezone...">
+        <div class="common-zones" id="commonZones"></div>
+      </div>
+      <div class="zone-list" id="zoneList"></div>
+      <div class="zone-footer">
+        <span id="zoneCount">0 selected</span>
+        <button id="zoneDoneBtn">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="clocks" id="clocks"></div>
+
+<div id="errorDetails" class="error-details"></div>
+
+<a href="#" class="tester-link" id="testerToggle">Time source tester / chooser</a>
+
+<section class="tester" id="testerSection" hidden>
+  <div class="tester-row">
+    <strong>Sync source</strong>
+    <span class="tester-hint">Saved in this browser and reused next time you open this page.</span>
+  </div>
+  <div class="source-chooser" id="sourceChooser"></div>
+  <div class="tester-row">
+    <button id="testAllBtn">Test all sources</button>
+    <button id="clearLogBtn">Clear log</button>
+    <span class="tester-hint">
+      <code>subsec</code> = whether the source reports fractional seconds; sources
+      without it are truncated to a whole second (~500&nbsp;ms average error) no
+      matter how fast they respond.
+    </span>
+  </div>
+  <pre class="tester-log" id="testerLog"></pre>
+</section>
+
+<footer>
+  True time is fetched every 15 minutes (and on load). On <em>Auto</em> all
+  sources are raced in parallel and the first valid response wins; pick a
+  specific source above to pin it instead. Between syncs the clock ticks
+  locally using the last known offset. If every source fails, the display
+  falls back to your device clock and the status dot turns orange.
+  Your timezones and source choice are saved in this browser.
+</footer>
+
+<script>
+  // ============================================================
+  // Timezone selection (multi-select with search, persisted)
+  // ============================================================
+  const STORAGE_KEY = "worldClockZones";
+  const DEFAULT_ZONES = ["America/Chicago", "America/Los_Angeles", "Asia/Kolkata"];
+
+  // A curated shortlist of well-known zones, shown as one-click chips above
+  // the full searchable list so common picks don't require scrolling/typing.
+  const COMMON_ZONES = [
+    "UTC",
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Anchorage", "Pacific/Honolulu", "America/Sao_Paulo", "America/Mexico_City",
+    "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Moscow",
+    "Africa/Cairo", "Africa/Johannesburg",
+    "Asia/Dubai", "Asia/Kolkata", "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul",
+    "Asia/Singapore", "Asia/Hong_Kong", "Australia/Sydney", "Pacific/Auckland"
+  ];
+
+  // Maps IANA timezone id -> array of ISO 3166-1 country codes, derived from
+  // the tzdb zone1970.tab table (public domain). Used only to show/search by
+  // country name instead of the bare continent/city path.
+  const TZ_COUNTRY = {"Europe/Andorra":["AD"],"Asia/Dubai":["AE","OM","RE","SC","TF"],"Asia/Kabul":["AF"],"Europe/Tirane":["AL"],"Asia/Yerevan":["AM"],"Antarctica/Casey":["AQ"],"Antarctica/Davis":["AQ"],"Antarctica/Mawson":["AQ"],"Antarctica/Palmer":["AQ"],"Antarctica/Rothera":["AQ"],"Antarctica/Troll":["AQ"],"Antarctica/Vostok":["AQ"],"America/Argentina/Buenos_Aires":["AR"],"America/Argentina/Cordoba":["AR"],"America/Argentina/Salta":["AR"],"America/Argentina/Jujuy":["AR"],"America/Argentina/Tucuman":["AR"],"America/Argentina/Catamarca":["AR"],"America/Argentina/La_Rioja":["AR"],"America/Argentina/San_Juan":["AR"],"America/Argentina/Mendoza":["AR"],"America/Argentina/San_Luis":["AR"],"America/Argentina/Rio_Gallegos":["AR"],"America/Argentina/Ushuaia":["AR"],"Pacific/Pago_Pago":["AS","UM"],"Europe/Vienna":["AT"],"Australia/Lord_Howe":["AU"],"Antarctica/Macquarie":["AU"],"Australia/Hobart":["AU"],"Australia/Melbourne":["AU"],"Australia/Sydney":["AU"],"Australia/Broken_Hill":["AU"],"Australia/Brisbane":["AU"],"Australia/Lindeman":["AU"],"Australia/Adelaide":["AU"],"Australia/Darwin":["AU"],"Australia/Perth":["AU"],"Australia/Eucla":["AU"],"Asia/Baku":["AZ"],"America/Barbados":["BB"],"Asia/Dhaka":["BD"],"Europe/Brussels":["BE","LU","NL"],"Europe/Sofia":["BG"],"Atlantic/Bermuda":["BM"],"America/La_Paz":["BO"],"America/Noronha":["BR"],"America/Belem":["BR"],"America/Fortaleza":["BR"],"America/Recife":["BR"],"America/Araguaina":["BR"],"America/Maceio":["BR"],"America/Bahia":["BR"],"America/Sao_Paulo":["BR"],"America/Campo_Grande":["BR"],"America/Cuiaba":["BR"],"America/Santarem":["BR"],"America/Porto_Velho":["BR"],"America/Boa_Vista":["BR"],"America/Manaus":["BR"],"America/Eirunepe":["BR"],"America/Rio_Branco":["BR"],"Asia/Thimphu":["BT"],"Europe/Minsk":["BY"],"America/Belize":["BZ"],"America/St_Johns":["CA"],"America/Halifax":["CA"],"America/Glace_Bay":["CA"],"America/Moncton":["CA"],"America/Goose_Bay":["CA"],"America/Toronto":["CA","BS"],"America/Iqaluit":["CA"],"America/Winnipeg":["CA"],"America/Resolute":["CA"],"America/Rankin_Inlet":["CA"],"America/Regina":["CA"],"America/Swift_Current":["CA"],"America/Edmonton":["CA"],"America/Cambridge_Bay":["CA"],"America/Inuvik":["CA"],"America/Vancouver":["CA"],"America/Dawson_Creek":["CA"],"America/Fort_Nelson":["CA"],"America/Whitehorse":["CA"],"America/Dawson":["CA"],"Europe/Zurich":["CH","DE","LI"],"Africa/Abidjan":["CI","BF","GH","GM","GN","IS","ML","MR","SH","SL","SN","TG"],"Pacific/Rarotonga":["CK"],"America/Santiago":["CL"],"America/Coyhaique":["CL"],"America/Punta_Arenas":["CL"],"Pacific/Easter":["CL"],"Asia/Shanghai":["CN"],"Asia/Urumqi":["CN"],"America/Bogota":["CO"],"America/Costa_Rica":["CR"],"America/Havana":["CU"],"Atlantic/Cape_Verde":["CV"],"Asia/Nicosia":["CY"],"Asia/Famagusta":["CY"],"Europe/Prague":["CZ","SK"],"Europe/Berlin":["DE","DK","NO","SE","SJ"],"America/Santo_Domingo":["DO"],"Africa/Algiers":["DZ"],"America/Guayaquil":["EC"],"Pacific/Galapagos":["EC"],"Europe/Tallinn":["EE"],"Africa/Cairo":["EG"],"Africa/El_Aaiun":["EH"],"Europe/Madrid":["ES"],"Africa/Ceuta":["ES"],"Atlantic/Canary":["ES"],"Europe/Helsinki":["FI","AX"],"Pacific/Fiji":["FJ"],"Atlantic/Stanley":["FK"],"Pacific/Kosrae":["FM"],"Atlantic/Faroe":["FO"],"Europe/Paris":["FR","MC"],"Europe/London":["GB","GG","IM","JE"],"Asia/Tbilisi":["GE"],"America/Cayenne":["GF"],"Europe/Gibraltar":["GI"],"America/Nuuk":["GL"],"America/Danmarkshavn":["GL"],"America/Scoresbysund":["GL"],"America/Thule":["GL"],"Europe/Athens":["GR"],"Atlantic/South_Georgia":["GS"],"America/Guatemala":["GT"],"Pacific/Guam":["GU","MP"],"Africa/Bissau":["GW"],"America/Guyana":["GY"],"Asia/Hong_Kong":["HK"],"America/Tegucigalpa":["HN"],"America/Port-au-Prince":["HT"],"Europe/Budapest":["HU"],"Asia/Jakarta":["ID"],"Asia/Pontianak":["ID"],"Asia/Makassar":["ID"],"Asia/Jayapura":["ID"],"Europe/Dublin":["IE"],"Asia/Jerusalem":["IL"],"Asia/Kolkata":["IN"],"Indian/Chagos":["IO"],"Asia/Baghdad":["IQ"],"Asia/Tehran":["IR"],"Europe/Rome":["IT","SM","VA"],"America/Jamaica":["JM"],"Asia/Amman":["JO"],"Asia/Tokyo":["JP","AU"],"Africa/Nairobi":["KE","DJ","ER","ET","KM","MG","SO","TZ","UG","YT"],"Asia/Bishkek":["KG"],"Pacific/Tarawa":["KI","MH","TV","UM","WF"],"Pacific/Kanton":["KI"],"Pacific/Kiritimati":["KI"],"Asia/Pyongyang":["KP"],"Asia/Seoul":["KR"],"Asia/Almaty":["KZ"],"Asia/Qyzylorda":["KZ"],"Asia/Qostanay":["KZ"],"Asia/Aqtobe":["KZ"],"Asia/Aqtau":["KZ"],"Asia/Atyrau":["KZ"],"Asia/Oral":["KZ"],"Asia/Beirut":["LB"],"Asia/Colombo":["LK"],"Africa/Monrovia":["LR"],"Europe/Vilnius":["LT"],"Europe/Riga":["LV"],"Africa/Tripoli":["LY"],"Africa/Casablanca":["MA"],"Europe/Chisinau":["MD"],"Pacific/Kwajalein":["MH"],"Asia/Yangon":["MM","CC"],"Asia/Ulaanbaatar":["MN"],"Asia/Hovd":["MN"],"Asia/Macau":["MO"],"America/Martinique":["MQ"],"Europe/Malta":["MT"],"Indian/Mauritius":["MU"],"Indian/Maldives":["MV","TF"],"America/Mexico_City":["MX"],"America/Cancun":["MX"],"America/Merida":["MX"],"America/Monterrey":["MX"],"America/Matamoros":["MX"],"America/Chihuahua":["MX"],"America/Ciudad_Juarez":["MX"],"America/Ojinaga":["MX"],"America/Mazatlan":["MX"],"America/Bahia_Banderas":["MX"],"America/Hermosillo":["MX"],"America/Tijuana":["MX"],"Asia/Kuching":["MY","BN"],"Africa/Maputo":["MZ","BI","BW","CD","MW","RW","ZM","ZW"],"Africa/Windhoek":["NA"],"Pacific/Noumea":["NC"],"Pacific/Norfolk":["NF"],"Africa/Lagos":["NG","AO","BJ","CD","CF","CG","CM","GA","GQ","NE"],"America/Managua":["NI"],"Asia/Kathmandu":["NP"],"Pacific/Nauru":["NR"],"Pacific/Niue":["NU"],"Pacific/Auckland":["NZ","AQ"],"Pacific/Chatham":["NZ"],"America/Panama":["PA","CA","KY"],"America/Lima":["PE"],"Pacific/Tahiti":["PF"],"Pacific/Marquesas":["PF"],"Pacific/Gambier":["PF"],"Pacific/Port_Moresby":["PG","AQ","FM"],"Pacific/Bougainville":["PG"],"Asia/Manila":["PH"],"Asia/Karachi":["PK"],"Europe/Warsaw":["PL"],"America/Miquelon":["PM"],"Pacific/Pitcairn":["PN"],"America/Puerto_Rico":["PR","AG","CA","AI","AW","BL","BQ","CW","DM","GD","GP","KN","LC","MF","MS","SX","TT","VC","VG","VI"],"Asia/Gaza":["PS"],"Asia/Hebron":["PS"],"Europe/Lisbon":["PT"],"Atlantic/Madeira":["PT"],"Atlantic/Azores":["PT"],"Pacific/Palau":["PW"],"America/Asuncion":["PY"],"Asia/Qatar":["QA","BH"],"Europe/Bucharest":["RO"],"Europe/Belgrade":["RS","BA","HR","ME","MK","SI"],"Europe/Kaliningrad":["RU"],"Europe/Moscow":["RU"],"Europe/Simferopol":["RU","UA"],"Europe/Kirov":["RU"],"Europe/Volgograd":["RU"],"Europe/Astrakhan":["RU"],"Europe/Saratov":["RU"],"Europe/Ulyanovsk":["RU"],"Europe/Samara":["RU"],"Asia/Yekaterinburg":["RU"],"Asia/Omsk":["RU"],"Asia/Novosibirsk":["RU"],"Asia/Barnaul":["RU"],"Asia/Tomsk":["RU"],"Asia/Novokuznetsk":["RU"],"Asia/Krasnoyarsk":["RU"],"Asia/Irkutsk":["RU"],"Asia/Chita":["RU"],"Asia/Yakutsk":["RU"],"Asia/Khandyga":["RU"],"Asia/Vladivostok":["RU"],"Asia/Ust-Nera":["RU"],"Asia/Magadan":["RU"],"Asia/Sakhalin":["RU"],"Asia/Srednekolymsk":["RU"],"Asia/Kamchatka":["RU"],"Asia/Anadyr":["RU"],"Asia/Riyadh":["SA","AQ","KW","YE"],"Pacific/Guadalcanal":["SB","FM"],"Africa/Khartoum":["SD"],"Asia/Singapore":["SG","AQ","MY"],"America/Paramaribo":["SR"],"Africa/Juba":["SS"],"Africa/Sao_Tome":["ST"],"America/El_Salvador":["SV"],"Asia/Damascus":["SY"],"America/Grand_Turk":["TC"],"Africa/Ndjamena":["TD"],"Asia/Bangkok":["TH","CX","KH","LA","VN"],"Asia/Dushanbe":["TJ"],"Pacific/Fakaofo":["TK"],"Asia/Dili":["TL"],"Asia/Ashgabat":["TM"],"Africa/Tunis":["TN"],"Pacific/Tongatapu":["TO"],"Europe/Istanbul":["TR"],"Asia/Taipei":["TW"],"Europe/Kyiv":["UA"],"America/New_York":["US"],"America/Detroit":["US"],"America/Kentucky/Louisville":["US"],"America/Kentucky/Monticello":["US"],"America/Indiana/Indianapolis":["US"],"America/Indiana/Vincennes":["US"],"America/Indiana/Winamac":["US"],"America/Indiana/Marengo":["US"],"America/Indiana/Petersburg":["US"],"America/Indiana/Vevay":["US"],"America/Chicago":["US"],"America/Indiana/Tell_City":["US"],"America/Indiana/Knox":["US"],"America/Menominee":["US"],"America/North_Dakota/Center":["US"],"America/North_Dakota/New_Salem":["US"],"America/North_Dakota/Beulah":["US"],"America/Denver":["US"],"America/Boise":["US"],"America/Phoenix":["US","CA"],"America/Los_Angeles":["US"],"America/Anchorage":["US"],"America/Juneau":["US"],"America/Sitka":["US"],"America/Metlakatla":["US"],"America/Yakutat":["US"],"America/Nome":["US"],"America/Adak":["US"],"Pacific/Honolulu":["US"],"America/Montevideo":["UY"],"Asia/Samarkand":["UZ"],"Asia/Tashkent":["UZ"],"America/Caracas":["VE"],"Asia/Ho_Chi_Minh":["VN"],"Pacific/Efate":["VU"],"Pacific/Apia":["WS"],"Africa/Johannesburg":["ZA","LS","SZ"],"Asia/Calcutta":["IN"],"Asia/Rangoon":["MM","CC"],"Asia/Saigon":["VN"],"Asia/Katmandu":["NP"],"Asia/Dacca":["BD"],"Africa/Asmera":["ER"],"America/Godthab":["GL"],"Pacific/Ponape":["FM"],"Pacific/Truk":["FM"],"Asia/Ujung_Pandang":["ID"]};
+
+  let regionNames = null;
+  try { regionNames = new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { /* unsupported */ }
+
+  function countryNameFromCode(code) {
+    if (!regionNames) return code;
+    try { return regionNames.of(code); } catch (e) { return code; }
+  }
+
+  function countryNamesFor(tz) {
+    const codes = TZ_COUNTRY[tz];
+    if (!codes || codes.length === 0) return "";
+    return codes.map(countryNameFromCode).join(", ");
+  }
+
+  // Display the modern city name even when the browser's own zone id is the
+  // legacy one (e.g. show "Kolkata" for the "Asia/Calcutta" identifier).
+  // Declared here (before ALL_ZONES/getAllTimezones run) since zoneParts,
+  // which reads this, is called as part of sorting ALL_ZONES below.
+  const CITY_DISPLAY_OVERRIDES = {
+    "Asia/Calcutta": "Kolkata",
+    "Asia/Rangoon": "Yangon",
+    "Asia/Saigon": "Ho Chi Minh City",
+    "Asia/Katmandu": "Kathmandu",
+    "Asia/Dacca": "Dhaka",
+    "Africa/Asmera": "Asmara",
+    "America/Godthab": "Nuuk",
+    "Pacific/Ponape": "Pohnpei",
+    "Pacific/Truk": "Chuuk",
+    "Asia/Ujung_Pandang": "Makassar"
+  };
+
+  function getAllTimezones() {
+    try {
+      if (typeof Intl.supportedValuesOf === "function") {
+        const zones = Intl.supportedValuesOf("timeZone");
+        // Several browsers' enumeration omits "UTC" (and all Etc/* zones)
+        // even though it's a perfectly valid, commonly-wanted timeZone value
+        // for formatting. Force it in so it's actually findable.
+        if (!zones.includes("UTC")) zones.push("UTC");
+        return zones;
+      }
+    } catch (e) { /* fall through */ }
+    // Minimal fallback for older browsers without Intl.supportedValuesOf
+    return [
+      "America/Chicago", "America/Los_Angeles", "America/New_York", "America/Denver",
+      "Asia/Kolkata", "Asia/Tokyo", "Asia/Shanghai", "Asia/Dubai", "Asia/Singapore",
+      "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Moscow",
+      "Australia/Sydney", "Pacific/Auckland", "Etc/UTC"
+    ];
+  }
+
+  // Sort by country name (falling back to the raw tz id for zones with no
+  // mapped country, e.g. Etc/UTC) then by city, so browsing groups zones by
+  // country instead of the alphabet-soup order of raw IANA paths.
+  const ALL_ZONES = getAllTimezones().sort((a, b) => {
+    const countryA = countryNamesFor(a) || a;
+    const countryB = countryNamesFor(b) || b;
+    if (countryA !== countryB) return countryA.localeCompare(countryB);
+    return zoneParts(a).city.localeCompare(zoneParts(b).city);
+  });
+
+  // Some browsers' Intl.supportedValuesOf('timeZone') still enumerates the
+  // pre-2006 tzdb name (e.g. "Asia/Calcutta") instead of the modern one
+  // ("Asia/Kolkata") the rest of this file's data is keyed on. Without this,
+  // a hardcoded modern id (in COMMON_ZONES/DEFAULT_ZONES) and the actual
+  // browser-enumerated id in ALL_ZONES silently refer to the same real
+  // timezone but as two different strings, so search/selection state never
+  // matches between the quick-pick chips and the full list.
+  const LEGACY_TZ_ALIASES = {
+    "Asia/Kolkata": "Asia/Calcutta",
+    "Asia/Yangon": "Asia/Rangoon",
+    "Asia/Ho_Chi_Minh": "Asia/Saigon",
+    "Asia/Kathmandu": "Asia/Katmandu",
+    "Asia/Dhaka": "Asia/Dacca",
+    "Africa/Asmara": "Africa/Asmera",
+    "America/Nuuk": "America/Godthab",
+    "Pacific/Pohnpei": "Pacific/Ponape",
+    "Pacific/Chuuk": "Pacific/Truk",
+    "Asia/Makassar": "Asia/Ujung_Pandang"
+  };
+
+  // Given a preferred (modern) tz id, return whichever spelling this
+  // browser's ALL_ZONES actually contains.
+  function resolveZoneId(tz) {
+    if (ALL_ZONES.includes(tz)) return tz;
+    const legacy = LEGACY_TZ_ALIASES[tz];
+    if (legacy && ALL_ZONES.includes(legacy)) return legacy;
+    return tz;
+  }
+
+  // Normalize the hardcoded lists to whatever ids this browser recognizes,
+  // so chips, cards, and the searchable list all key off the same string.
+  [COMMON_ZONES, DEFAULT_ZONES].forEach(list => {
+    for (let i = 0; i < list.length; i++) list[i] = resolveZoneId(list[i]);
+  });
+
+  function getCookie(name) {
+    const escaped = name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1");
+    const match = document.cookie.match(new RegExp("(?:^|; )" + escaped + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function setCookie(name, value, days) {
+    const maxAge = days * 24 * 60 * 60;
+    document.cookie = name + "=" + encodeURIComponent(value) + "; max-age=" + maxAge + "; path=/; SameSite=Lax";
+  }
+
+  function loadSelectedZones() {
+    try {
+      // Cookies don't reliably persist for pages opened as a local file://
+      // (browsers largely disable them for that origin), so fall back to
+      // localStorage — whichever the browser actually honors will have data.
+      const raw = getCookie(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Resolve any legacy ids saved by an earlier version of this page
+          // before keeping only zones this browser actually recognizes.
+          return parsed.map(resolveZoneId).filter(tz => ALL_ZONES.includes(tz));
+        }
+      }
+    } catch (e) { /* ignore corrupt storage */ }
+    return DEFAULT_ZONES.slice();
+  }
+
+  function saveSelectedZones() {
+    const json = JSON.stringify(selectedZones);
+    setCookie(STORAGE_KEY, json, 365);
+    localStorage.setItem(STORAGE_KEY, json);
+  }
+
+  let selectedZones = loadSelectedZones();
+
+  function zoneParts(tz) {
+    if (tz === "UTC" || tz === "Etc/UTC") {
+      return { city: "UTC", region: "Coordinated Universal Time", country: "", extraSearch: "gmt universal" };
+    }
+    const segments = tz.split("/");
+    const rawCity = segments[segments.length - 1].replace(/_/g, " ");
+    const city = CITY_DISPLAY_OVERRIDES[tz] || rawCity;
+    const region = segments.slice(0, -1).join("/").replace(/_/g, " ") || tz;
+    const country = countryNamesFor(tz);
+    return { city, region, country, extraSearch: "" };
+  }
+
+  function tzAbbrev(tz, date) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour: "2-digit",
+        timeZoneName: "short"
+      }).formatToParts(date);
+      const part = parts.find(p => p.type === "timeZoneName");
+      return part ? part.value : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  // ============================================================
+  // Clock rendering
+  // ============================================================
+  const clocksEl = document.getElementById("clocks");
+  let use24h = false;
+
+  function trueNow() {
+    return new Date(Date.now() + offsetMs);
+  }
+
+  // Minutes a timezone is offset from UTC at the given instant (positive =
+  // ahead of UTC), computed by formatting the instant's civil time in that
+  // zone and comparing it to the same instant read as UTC. This naturally
+  // accounts for DST without needing any offset table.
+  function getOffsetMinutes(tz, date) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+    const asUTC = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second)
+    );
+    return Math.round((asUTC - date.getTime()) / 60000);
+  }
+
+  // Signed "+HH:MM" / "-HH:MM" string from a minute offset.
+  function formatOffset(mins) {
+    const sign = mins < 0 ? "-" : "+";
+    const abs = Math.abs(mins);
+    const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+    const mm = String(abs % 60).padStart(2, "0");
+    return sign + hh + ":" + mm;
+  }
+
+  function renderCards() {
+    clocksEl.innerHTML = "";
+    if (selectedZones.length === 0) {
+      clocksEl.innerHTML = '<div class="empty-state">No timezones selected — click "Manage timezones" to add some.</div>';
+      return;
+    }
+    selectedZones.forEach(tz => {
+      const { city, country } = zoneParts(tz);
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.tz = tz;
+      card.innerHTML = `
+        <button class="remove" title="Remove" data-remove-tz="${tz}">&times;</button>
+        <div class="label">${city}</div>
+        <div class="tzid">${country ? country + " · " : ""}${tz}</div>
+        <div class="time">--:--:--</div>
+        <div class="date">-</div>
+        <div class="offsets">
+          <span class="offset-badge offset-utc">UTC —</span>
+          <span class="offset-badge offset-you">You —</span>
+        </div>
+      `;
+      clocksEl.appendChild(card);
+    });
+  }
+
+  function render() {
+    const now = trueNow();
+    const localOffsetMinutes = -now.getTimezoneOffset();
+    clocksEl.querySelectorAll(".card").forEach(card => {
+      const tz = card.dataset.tz;
+      const timeStr = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: !use24h
+      }).format(now);
+      const dateStr = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        weekday: "short",
+        month: "short",
+        day: "numeric"
+      }).format(now);
+      const abbrev = tzAbbrev(tz, now);
+      card.querySelector(".time").textContent = timeStr;
+      card.querySelector(".date").textContent = dateStr + (abbrev ? " · " + abbrev : "");
+
+      const zoneOffsetMinutes = getOffsetMinutes(tz, now);
+      const relativeMinutes = zoneOffsetMinutes - localOffsetMinutes;
+      const utcEl = card.querySelector(".offset-utc");
+      const youEl = card.querySelector(".offset-you");
+      if (utcEl) utcEl.textContent = "UTC" + formatOffset(zoneOffsetMinutes);
+      if (youEl) youEl.textContent = relativeMinutes === 0 ? "Same as you" : "You " + formatOffset(relativeMinutes);
+    });
+  }
+
+  clocksEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove-tz]");
+    if (!btn) return;
+    const tz = btn.dataset.removeTz;
+    selectedZones = selectedZones.filter(z => z !== tz);
+    saveSelectedZones();
+    renderCards();
+    render();
+    syncZoneCheckboxes();
+    syncCommonZoneChips();
+    updateZoneCount();
+  });
+
+  // ============================================================
+  // Zone manager popover (search + multi-select)
+  // ============================================================
+  const manageZonesBtn = document.getElementById("manageZonesBtn");
+  const zonePopover = document.getElementById("zonePopover");
+  const zoneSearch = document.getElementById("zoneSearch");
+  const zoneListEl = document.getElementById("zoneList");
+  const zoneCountEl = document.getElementById("zoneCount");
+  const zoneDoneBtn = document.getElementById("zoneDoneBtn");
+
+  function buildZoneList() {
+    zoneListEl.innerHTML = "";
+    ALL_ZONES.forEach(tz => {
+      const { city, region, country, extraSearch } = zoneParts(tz);
+      const row = document.createElement("label");
+      row.className = "zone-item";
+      // Search matches on city, country name, continent/region, the raw
+      // tz id, and any extra synonyms (e.g. "gmt" for UTC), so "chicago",
+      // "united states", "america", "gmt", or the exact id all find the
+      // same row.
+      row.dataset.searchText = [tz, city, country, region, extraSearch]
+        .join(" ")
+        .toLowerCase()
+        .replace(/_/g, " ");
+      row.innerHTML = `
+        <input type="checkbox" data-tz="${tz}" ${selectedZones.includes(tz) ? "checked" : ""}>
+        <span>
+          <span class="zone-id">${city}</span>
+          <span class="zone-region">${country || region}</span>
+        </span>
+      `;
+      zoneListEl.appendChild(row);
+    });
+  }
+
+  function buildCommonZoneChips() {
+    const wrap = document.getElementById("commonZones");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    COMMON_ZONES.forEach(tz => {
+      const { city } = zoneParts(tz);
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "zone-chip";
+      chip.dataset.tz = tz;
+      chip.textContent = city;
+      wrap.appendChild(chip);
+    });
+    syncCommonZoneChips();
+  }
+
+  function syncCommonZoneChips() {
+    const wrap = document.getElementById("commonZones");
+    if (!wrap) return;
+    wrap.querySelectorAll(".zone-chip").forEach(chip => {
+      chip.classList.toggle("active", selectedZones.includes(chip.dataset.tz));
+    });
+  }
+
+  function syncZoneCheckboxes() {
+    zoneListEl.querySelectorAll("input[type=checkbox]").forEach(cb => {
+      cb.checked = selectedZones.includes(cb.dataset.tz);
+    });
+  }
+
+  function updateZoneCount() {
+    zoneCountEl.textContent = selectedZones.length + " selected";
+  }
+
+  zoneListEl.addEventListener("change", (e) => {
+    const cb = e.target;
+    if (cb.tagName !== "INPUT") return;
+    const tz = cb.dataset.tz;
+    if (cb.checked) {
+      if (!selectedZones.includes(tz)) selectedZones.push(tz);
+    } else {
+      selectedZones = selectedZones.filter(z => z !== tz);
+    }
+    saveSelectedZones();
+    renderCards();
+    render();
+    syncCommonZoneChips();
+    updateZoneCount();
+  });
+
+  document.addEventListener("click", (e) => {
+    const chip = e.target.closest(".zone-chip");
+    if (!chip) return;
+    const tz = chip.dataset.tz;
+    if (selectedZones.includes(tz)) {
+      selectedZones = selectedZones.filter(z => z !== tz);
+    } else {
+      selectedZones.push(tz);
+    }
+    saveSelectedZones();
+    renderCards();
+    render();
+    syncZoneCheckboxes();
+    syncCommonZoneChips();
+    updateZoneCount();
+  });
+
+  zoneSearch.addEventListener("input", () => {
+    const q = zoneSearch.value.trim().toLowerCase();
+    let anyVisible = false;
+    zoneListEl.querySelectorAll(".zone-item").forEach(row => {
+      const match = !q || row.dataset.searchText.includes(q);
+      row.style.display = match ? "flex" : "none";
+      if (match) anyVisible = true;
+    });
+    let emptyMsg = zoneListEl.querySelector(".zone-empty");
+    if (!anyVisible) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement("div");
+        emptyMsg.className = "zone-empty";
+        emptyMsg.textContent = "No matching timezones.";
+        zoneListEl.appendChild(emptyMsg);
+      }
+    } else if (emptyMsg) {
+      emptyMsg.remove();
+    }
+  });
+
+  function openZonePopover() {
+    zonePopover.hidden = false;
+    zoneSearch.value = "";
+    zoneListEl.querySelectorAll(".zone-item").forEach(row => row.style.display = "flex");
+    const emptyMsg = zoneListEl.querySelector(".zone-empty");
+    if (emptyMsg) emptyMsg.remove();
+    syncZoneCheckboxes();
+    syncCommonZoneChips();
+    updateZoneCount();
+    zoneSearch.focus();
+  }
+
+  function closeZonePopover() {
+    zonePopover.hidden = true;
+  }
+
+  manageZonesBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (zonePopover.hidden) openZonePopover();
+    else closeZonePopover();
+  });
+
+  zoneDoneBtn.addEventListener("click", closeZonePopover);
+
+  document.addEventListener("click", (e) => {
+    if (!zonePopover.hidden && !zonePopover.contains(e.target) && e.target !== manageZonesBtn) {
+      closeZonePopover();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !zonePopover.hidden) closeZonePopover();
+  });
+
+  // ============================================================
+  // True-time sync (fallback chain across multiple sources)
+  // ============================================================
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const syncBtn = document.getElementById("syncBtn");
+  const fmt12Btn = document.getElementById("fmt12");
+  const fmt24Btn = document.getElementById("fmt24");
+
+  // Note on the "read the Date response header" approach: browsers only
+  // expose a small set of CORS-safelisted response headers to JS on
+  // cross-origin fetches (Cache-Control, Content-Language, Content-Length,
+  // Content-Type, Expires, Last-Modified, Pragma) unless the server adds
+  // Access-Control-Expose-Headers: Date. Cloudflare's /cdn-cgi/trace
+  // diagnostic endpoint sidesteps this: it puts a unix timestamp (ts=...)
+  // in the plain-text BODY instead of a header, and sends
+  // Access-Control-Allow-Origin: *, so it works cross-origin from any page.
+  const TIME_SOURCES = [
+    {
+      name: "cloudflare.com (cdn-cgi/trace)",
+      url: "https://www.cloudflare.com/cdn-cgi/trace",
+      type: "text",
+      parse: (text) => {
+        const match = text.match(/^ts=([\d.]+)/m);
+        return match ? parseFloat(match[1]) * 1000 : NaN;
+      }
+    },
+    {
+      name: "timeapi.io",
+      url: "https://timeapi.io/api/Time/current/zone?timeZone=UTC",
+      type: "json",
+      parse: (data) => new Date(data.dateTime + "Z").getTime()
+    },
+    {
+      name: "worldclockapi.com",
+      url: "https://worldclockapi.com/api/json/utc/now",
+      type: "json",
+      parse: (data) => new Date(data.currentDateTime).getTime()
+    },
+    {
+      name: "worldtimeapi.org",
+      url: "https://worldtimeapi.org/api/timezone/Etc/UTC",
+      type: "json",
+      parse: (data) => new Date(data.utc_datetime).getTime()
+    },
+    {
+      // Moved to last: observed to hang past its fetch timeout on some
+      // networks rather than failing cleanly, so it's de-prioritized behind
+      // the other, better-behaved sources.
+      name: "1.1.1.1 (cdn-cgi/trace)",
+      url: "https://1.1.1.1/cdn-cgi/trace",
+      type: "text",
+      parse: (text) => {
+        const match = text.match(/^ts=([\d.]+)/m);
+        return match ? parseFloat(match[1]) * 1000 : NaN;
+      }
+    }
+  ];
+
+  // Every HTTP response carries a Date header (RFC 7231), including this
+  // page's own — and since it's same-origin, no CORS opt-in is needed to
+  // read it (unlike the third-party sources above, which must expose
+  // headers explicitly or leak the time via the body instead). Only usable
+  // when actually served over http(s): a file:// page has no HTTP response
+  // at all, so there's no header to read. Placed before 1.1.1.1 since it
+  // requires no third party at all — if this page loaded, its own origin is
+  // reachable by definition — even though, like the trace endpoints, the
+  // Date header's RFC 1123 format only carries whole-second precision.
+  if (location.protocol === "http:" || location.protocol === "https:") {
+    const cacheBustedUrl = location.href.split("#")[0] +
+      (location.href.includes("?") ? "&" : "?") + "_cb=" + Date.now();
+    TIME_SOURCES.splice(TIME_SOURCES.length - 1, 0, {
+      name: "this page's own server (Date header)",
+      url: cacheBustedUrl,
+      method: "HEAD",
+      type: "header",
+      parse: (res) => {
+        const header = res.headers.get("Date");
+        return header ? new Date(header).getTime() : NaN;
+      }
+    });
+  }
+  const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+  const FETCH_TIMEOUT_MS = 6000;
+
+  // Which source to sync from: "auto" races them all, otherwise the pinned
+  // source's name. Persisted the same belt-and-braces way as the timezone
+  // list (cookie + localStorage) since cookies don't survive file:// pages.
+  const SOURCE_PREF_KEY = "worldClockTimeSource";
+
+  function loadPreferredSource() {
+    try {
+      const raw = getCookie(SOURCE_PREF_KEY) || localStorage.getItem(SOURCE_PREF_KEY);
+      // Only honor a pinned name that still exists — the same-origin source
+      // disappears on file://, and source names can change between versions.
+      if (raw === "auto" || (raw && TIME_SOURCES.some(s => s.name === raw))) return raw;
+    } catch (e) { /* ignore corrupt storage */ }
+    return "auto";
+  }
+
+  function savePreferredSource(name) {
+    setCookie(SOURCE_PREF_KEY, name, 365);
+    try { localStorage.setItem(SOURCE_PREF_KEY, name); } catch (e) { /* ignore */ }
+  }
+
+  let preferredSource = loadPreferredSource();
+  let offsetMs = 0;        // serverUTCms - localDeviceMs, applied to local clock
+  let lastSyncOk = false;
+  let lastErrors = [];
+
+  // Bounds an entire async operation to `ms` — not just the initial fetch().
+  // Clearing the timer as soon as fetch() resolves (as this previously did)
+  // only guards the connection/header phase: the body read that follows
+  // (res.text()/res.json()) could still stall forever with no timeout armed.
+  // Passing the signal into `work` and clearing the timer only once `work`
+  // itself settles keeps the abort live through the body read too.
+  function withTimeout(work, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return Promise.resolve(work(controller.signal)).finally(() => clearTimeout(timer));
+  }
+
+  function describeFetchError(err) {
+    if (err.name === "AbortError") return "timed out";
+    if (err instanceof TypeError) return "network/CORS blocked (" + err.message + ")";
+    return err.message || String(err);
+  }
+
+  // Queries one source. Never rejects — always resolves to a result object,
+  // so a batch of these can be raced/awaited without one failure taking the
+  // others down with it.
+  async function probeSource(source) {
+    const requestSentAt = Date.now();
+    try {
+      const data = await withTimeout(async (signal) => {
+        const res = await fetch(source.url, {
+          method: source.method || "GET",
+          cache: "no-store",
+          signal
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (source.type === "header") return res;
+        return source.type === "text" ? await res.text() : await res.json();
+      }, FETCH_TIMEOUT_MS);
+
+      const serverMs = source.parse(data);
+      if (!serverMs || Number.isNaN(serverMs)) throw new Error("could not parse time from response");
+
+      const arrivedAt = Date.now();
+      const roundTripMs = arrivedAt - requestSentAt;
+      return {
+        ok: true,
+        name: source.name,
+        roundTripMs,
+        serverMs,
+        // Assume the response was generated at the midpoint of the round
+        // trip. Only as good as the timestamp itself: a source truncated to
+        // whole seconds carries up to 1 s of error this cannot correct for.
+        offsetMs: (serverMs + roundTripMs / 2) - arrivedAt,
+        subsecond: serverMs % 1000 !== 0
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        name: source.name,
+        roundTripMs: Date.now() - requestSentAt,
+        message: describeFetchError(err)
+      };
+    }
+  }
+
+  function renderErrors() {
+    const el = document.getElementById("errorDetails");
+    if (!el) return;
+    if (lastErrors.length === 0) {
+      el.textContent = "";
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "block";
+    el.innerHTML = lastErrors
+      .map(e => `<div>${e.name}: ${e.message}</div>`)
+      .join("");
+  }
+
+  // Device clock minus true time: positive means this device runs ahead.
+  // (offsetMs is the correction in the other direction, hence the negation.)
+  function renderDrift() {
+    const el = document.getElementById("clockDrift");
+    if (!el) return;
+    if (!lastSyncOk) {
+      el.textContent = "";
+      return;
+    }
+    const driftSec = -offsetMs / 1000;
+    el.textContent = "clock drift: " + (driftSec >= 0 ? "+" : "") + driftSec.toFixed(3) + " s";
+  }
+
+  function activeSources() {
+    if (preferredSource === "auto") return TIME_SOURCES;
+    const pinned = TIME_SOURCES.filter(s => s.name === preferredSource);
+    // A pinned source that no longer exists shouldn't strand the clock with
+    // nothing to sync against.
+    return pinned.length ? pinned : TIME_SOURCES;
+  }
+
+  async function syncTime() {
+    statusText.textContent = "Syncing...";
+    lastErrors = [];
+    const syncStartedAt = performance.now();
+    const sources = activeSources();
+
+    logLine(preferredSource === "auto"
+      ? "sync: racing " + sources.length + " sources in parallel (timeout " + FETCH_TIMEOUT_MS + " ms)"
+      : "sync: pinned to " + preferredSource + " (timeout " + FETCH_TIMEOUT_MS + " ms)");
+
+    // All sources are queried at once and the first valid response wins, so
+    // one slow/hanging source no longer delays the ones behind it — the old
+    // sequential chain paid every failure's full timeout before moving on.
+    const probes = sources.map(probeSource);
+
+    let winner = null;
+    let failures = [];
+    try {
+      winner = await Promise.any(
+        probes.map(p => p.then(r => (r.ok ? r : Promise.reject(r))))
+      );
+    } catch (aggregate) {
+      // Promise.any only rejects once every probe has settled, so these are
+      // the complete results — safe to report as the final failure list.
+      failures = (aggregate && aggregate.errors) || [];
+    }
+
+    if (winner) {
+      offsetMs = winner.offsetMs;
+      lastSyncOk = true;
+      statusDot.className = "dot";
+      const elapsedSec = ((performance.now() - syncStartedAt) / 1000).toFixed(3);
+      statusText.textContent = "Synced via " + winner.name + " at " +
+        new Date().toLocaleTimeString("en-US", { hour12: !use24h }) +
+        " in " + elapsedSec + " s";
+      // The losers are still in flight; log them as they land rather than
+      // making the clock wait on responses it has already stopped needing.
+      Promise.all(probes).then(results => {
+        results.forEach(r => logResult(r, r === winner));
+      });
+    } else {
+      lastSyncOk = false;
+      offsetMs = 0;
+      statusDot.className = "dot warn";
+      statusText.textContent = "All time sources failed — using device clock";
+      lastErrors = failures.map(f => ({ name: f.name, message: f.message }));
+      failures.forEach(r => logResult(r, false));
+    }
+
+    renderErrors();
+    renderDrift();
+    render();
+  }
+
+  syncBtn.addEventListener("click", syncTime);
+
+  fmt12Btn.addEventListener("click", () => {
+    use24h = false;
+    fmt12Btn.classList.add("active");
+    fmt24Btn.classList.remove("active");
+    render();
+  });
+  fmt24Btn.addEventListener("click", () => {
+    use24h = true;
+    fmt24Btn.classList.add("active");
+    fmt12Btn.classList.remove("active");
+    render();
+  });
+
+  // ============================================================
+  // Time source tester / chooser (hidden panel)
+  // ============================================================
+  const testerToggle = document.getElementById("testerToggle");
+  const testerSection = document.getElementById("testerSection");
+  const testerLogEl = document.getElementById("testerLog");
+  const sourceChooser = document.getElementById("sourceChooser");
+  const testAllBtn = document.getElementById("testAllBtn");
+  const clearLogBtn = document.getElementById("clearLogBtn");
+
+  const MAX_LOG_LINES = 500;
+  // Widest source name, so every log line's columns line up in the monospace
+  // panel without hand-tuning the padding each time a source is added.
+  const LOG_NAME_WIDTH = TIME_SOURCES.reduce((w, s) => Math.max(w, s.name.length), 0);
+
+  function logLine(text) {
+    if (!testerLogEl) return;
+    const stamp = new Date().toLocaleTimeString("en-US", { hour12: false }) +
+      "." + String(new Date().getMilliseconds()).padStart(3, "0");
+    testerLogEl.textContent += stamp + "  " + text + "\n";
+    // Keep the panel bounded; it accumulates a line per source per sync.
+    const lines = testerLogEl.textContent.split("\n");
+    if (lines.length > MAX_LOG_LINES) {
+      testerLogEl.textContent = lines.slice(lines.length - MAX_LOG_LINES).join("\n");
+    }
+    testerLogEl.scrollTop = testerLogEl.scrollHeight;
+  }
+
+  function pad(str, width) {
+    return String(str).padEnd(width);
+  }
+
+  function padNum(n, width) {
+    return String(n).padStart(width);
+  }
+
+  function logResult(r, isWinner) {
+    if (r.ok) {
+      const driftSec = (-r.offsetMs / 1000).toFixed(3);
+      logLine(
+        (isWinner ? "  WON  " : "  ok   ") + pad(r.name, LOG_NAME_WIDTH) +
+        "  rtt=" + padNum(r.roundTripMs, 5) + "ms" +
+        "  drift=" + padNum((r.offsetMs <= 0 ? "+" : "") + driftSec, 7) + "s" +
+        "  subsec=" + (r.subsecond ? "yes" : "no ")
+      );
+    } else {
+      logLine(
+        "  FAIL  " + pad(r.name, LOG_NAME_WIDTH) +
+        "  rtt=" + padNum(r.roundTripMs, 5) + "ms" +
+        "  " + r.message
+      );
+    }
+  }
+
+  function buildSourceChooser() {
+    if (!sourceChooser) return;
+    sourceChooser.innerHTML = "";
+    const options = [{
+      value: "auto",
+      label: "Auto (race all sources, first valid response wins)",
+      note: TIME_SOURCES.length + " sources"
+    }].concat(TIME_SOURCES.map(s => ({
+      value: s.name,
+      label: s.name,
+      note: s.url.length > 60 ? s.url.slice(0, 57) + "..." : s.url
+    })));
+
+    options.forEach(opt => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "timeSource";
+      input.value = opt.value;
+      input.checked = preferredSource === opt.value;
+      label.appendChild(input);
+      const text = document.createElement("span");
+      text.textContent = opt.label + " ";
+      const note = document.createElement("span");
+      note.className = "src-note";
+      note.textContent = opt.note;
+      text.appendChild(note);
+      label.appendChild(text);
+      sourceChooser.appendChild(label);
+    });
+  }
+
+  if (sourceChooser) {
+    sourceChooser.addEventListener("change", (e) => {
+      if (e.target.name !== "timeSource") return;
+      preferredSource = e.target.value;
+      savePreferredSource(preferredSource);
+      logLine("source preference set to: " + preferredSource);
+      syncTime();
+    });
+  }
+
+  if (testerToggle) {
+    testerToggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      testerSection.hidden = !testerSection.hidden;
+      if (!testerSection.hidden) {
+        testerSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+  }
+
+  if (testAllBtn) {
+    testAllBtn.addEventListener("click", async () => {
+      testAllBtn.disabled = true;
+      logLine("--- testing all " + TIME_SOURCES.length + " sources in parallel ---");
+      const results = await Promise.all(TIME_SOURCES.map(probeSource));
+      // Fastest first, failures last, so the log reads as a ranking.
+      results
+        .slice()
+        .sort((a, b) => (a.ok === b.ok) ? a.roundTripMs - b.roundTripMs : (a.ok ? -1 : 1))
+        .forEach(r => logResult(r, false));
+      logLine("--- test complete ---");
+      testAllBtn.disabled = false;
+    });
+  }
+
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener("click", () => { testerLogEl.textContent = ""; });
+  }
+
+  // ============================================================
+  // Init
+  // ============================================================
+  buildSourceChooser();
+  renderCards();
+  buildZoneList();
+  buildCommonZoneChips();
+  updateZoneCount();
+  syncTime();
+  setInterval(syncTime, SYNC_INTERVAL_MS);
+  setInterval(render, 1000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Time API Latency Test</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --card-border: #2a2e38;
+    --text: #eef0f4;
+    --muted: #8b90a0;
+    --accent: #4da3ff;
+    --warn: #e2a13d;
+    --ok: #4dbf83;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+  }
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 24px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  label { font-size: 0.85rem; color: var(--muted); }
+  input[type="number"] {
+    width: 60px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  button {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 920px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 0.85rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: right;
+    border-bottom: 1px solid var(--card-border);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr.testing td { color: var(--accent); }
+  tr.failed td { color: var(--warn); }
+  .source-name { font-weight: 600; }
+  .source-url { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 400; margin-top: 2px; }
+  .rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    color: var(--muted);
+    font-size: 0.7rem;
+    margin-right: 8px;
+  }
+  tr.rank-1 .rank { background: var(--ok); color: #fff; }
+  .progress {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .runs-detail {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .status-line {
+    margin: 16px 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  footer {
+    margin-top: 28px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    max-width: 600px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Time API Latency Test</h1>
+
+<div class="controls">
+  <label for="runsInput">Requests per source</label>
+  <input type="number" id="runsInput" value="5" min="1" max="20">
+  <label for="delayInput">Delay between requests (ms)</label>
+  <input type="number" id="delayInput" value="150" min="0" max="5000">
+  <label for="timeoutInput">Timeout per request (ms)</label>
+  <input type="number" id="timeoutInput" value="5000" min="500" max="30000">
+  <button id="runBtn">Run test</button>
+</div>
+
+<div class="status-line" id="statusLine"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>OK / Total</th>
+      <th>Min (ms)</th>
+      <th>Avg (ms)</th>
+      <th>Median (ms)</th>
+      <th>Max (ms)</th>
+    </tr>
+  </thead>
+  <tbody id="resultsBody"></tbody>
+</table>
+
+<footer>
+  Measures round-trip time (request sent → response fully read) for each time
+  source used by the world clock's sync fallback chain. Requests to each
+  source run sequentially, one source at a time, so sources don't compete for
+  bandwidth with each other. Lower round-trip time generally means a tighter,
+  more accurate offset correction. Results depend heavily on your network and
+  location, so re-run a few times before drawing conclusions.
+</footer>
+
+<script>
+  const TIME_SOURCES = [
+    {
+      name: "Cloudflare (cdn-cgi/trace)",
+      url: "https://www.cloudflare.com/cdn-cgi/trace",
+      type: "text",
+      parse: (text) => {
+        const match = text.match(/^ts=([\d.]+)/m);
+        return match ? parseFloat(match[1]) * 1000 : NaN;
+      }
+    },
+    {
+      name: "timeapi.io",
+      url: "https://timeapi.io/api/Time/current/zone?timeZone=UTC",
+      type: "json",
+      parse: (data) => new Date(data.dateTime + "Z").getTime()
+    },
+    {
+      name: "worldclockapi.com",
+      url: "https://worldclockapi.com/api/json/utc/now",
+      type: "json",
+      parse: (data) => new Date(data.currentDateTime).getTime()
+    },
+    {
+      name: "worldtimeapi.org",
+      url: "https://worldtimeapi.org/api/timezone/Etc/UTC",
+      type: "json",
+      parse: (data) => new Date(data.utc_datetime).getTime()
+    },
+    {
+      // Moved to last: this endpoint has been observed to hang past its
+      // timeout on some networks (connection never settles, so the abort
+      // signal never gets a chance to cut it off) — see the "still not
+      // timing out" investigation. Kept in the list but de-prioritized so
+      // it doesn't block the other, better-behaved sources.
+      name: "1.1.1.1 (cdn-cgi/trace)",
+      url: "https://1.1.1.1/cdn-cgi/trace",
+      type: "text",
+      parse: (text) => {
+        const match = text.match(/^ts=([\d.]+)/m);
+        return match ? parseFloat(match[1]) * 1000 : NaN;
+      }
+    }
+  ];
+
+  const runsInput = document.getElementById("runsInput");
+  const delayInput = document.getElementById("delayInput");
+  const timeoutInput = document.getElementById("timeoutInput");
+  const runBtn = document.getElementById("runBtn");
+  const statusLine = document.getElementById("statusLine");
+  const resultsBody = document.getElementById("resultsBody");
+
+  // Bounds an entire async operation (not just the initial fetch()) to `ms`.
+  // A plain fetch()'s AbortSignal only guards the connection/header phase if
+  // the timer is cleared as soon as fetch() resolves — but the response body
+  // (res.text()/res.json()) is read afterwards and can still stall forever
+  // with no timeout applied. Passing the signal into `work` and only
+  // clearing the timer once `work` itself finishes keeps the abort armed
+  // through the body read too, so a stalled body still gets cut off at `ms`.
+  function withTimeout(work, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return Promise.resolve(work(controller.signal)).finally(() => clearTimeout(timer));
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function median(sorted) {
+    const n = sorted.length;
+    if (n === 0) return NaN;
+    const mid = Math.floor(n / 2);
+    return n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  }
+
+  function buildRows() {
+    resultsBody.innerHTML = "";
+    TIME_SOURCES.forEach((source, i) => {
+      const row = document.createElement("tr");
+      row.dataset.index = i;
+      row.innerHTML = `
+        <td>
+          <span class="source-name">${source.name}</span>
+          <span class="source-url">${source.url}</span>
+        </td>
+        <td class="ok-total">–</td>
+        <td class="min">–</td>
+        <td class="avg">–</td>
+        <td class="median">–</td>
+        <td class="max">–</td>
+      `;
+      resultsBody.appendChild(row);
+    });
+  }
+
+  async function testSource(source, runs, delayMs, timeoutMs, row) {
+    const times = [];
+    let okCount = 0;
+    let timeoutCount = 0;
+
+    row.classList.add("testing");
+    for (let i = 0; i < runs; i++) {
+      row.querySelector(".ok-total").textContent = `testing ${i + 1}/${runs}...`;
+      try {
+        const sentAt = performance.now();
+        const data = await withTimeout(async (signal) => {
+          const res = await fetch(source.url, { cache: "no-store", signal });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return source.type === "text" ? await res.text() : await res.json();
+        }, timeoutMs);
+        const roundTripMs = performance.now() - sentAt;
+        const parsed = source.parse(data);
+        if (!parsed || Number.isNaN(parsed)) throw new Error("unparseable response");
+        times.push(roundTripMs);
+        okCount++;
+      } catch (err) {
+        if (err.name === "AbortError") timeoutCount++;
+        console.warn(source.name, "attempt", i + 1, "failed:", err);
+      }
+      if (i < runs - 1 && delayMs > 0) await sleep(delayMs);
+    }
+    row.classList.remove("testing");
+
+    times.sort((a, b) => a - b);
+    row.querySelector(".ok-total").textContent = timeoutCount > 0
+      ? `${okCount} / ${runs} (${timeoutCount} timed out)`
+      : `${okCount} / ${runs}`;
+    if (times.length > 0) {
+      const avg = times.reduce((a, b) => a + b, 0) / times.length;
+      row.querySelector(".min").textContent = times[0].toFixed(0);
+      row.querySelector(".avg").textContent = avg.toFixed(0);
+      row.querySelector(".median").textContent = median(times).toFixed(0);
+      row.querySelector(".max").textContent = times[times.length - 1].toFixed(0);
+      return { avg, ok: true };
+    } else {
+      row.classList.add("failed");
+      row.querySelector(".min").textContent = "–";
+      row.querySelector(".avg").textContent = "–";
+      row.querySelector(".median").textContent = "–";
+      row.querySelector(".max").textContent = "–";
+      return { avg: Infinity, ok: false };
+    }
+  }
+
+  function applyRanking(avgBySourceIndex) {
+    const ranked = TIME_SOURCES
+      .map((_, i) => i)
+      .filter(i => avgBySourceIndex[i] && avgBySourceIndex[i].ok)
+      .sort((a, b) => avgBySourceIndex[a].avg - avgBySourceIndex[b].avg);
+
+    resultsBody.querySelectorAll("tr").forEach(row => {
+      row.classList.remove("rank-1");
+    });
+    ranked.forEach((sourceIndex, rank) => {
+      const row = resultsBody.querySelector(`tr[data-index="${sourceIndex}"]`);
+      if (rank === 0) row.classList.add("rank-1");
+      const nameEl = row.querySelector(".source-name");
+      let rankBadge = nameEl.querySelector(".rank");
+      if (!rankBadge) {
+        rankBadge = document.createElement("span");
+        rankBadge.className = "rank";
+        nameEl.prepend(rankBadge);
+      }
+      rankBadge.textContent = rank + 1;
+    });
+  }
+
+  async function runTest() {
+    const runs = Math.max(1, Math.min(20, parseInt(runsInput.value, 10) || 5));
+    const delayMs = Math.max(0, Math.min(5000, parseInt(delayInput.value, 10) || 0));
+    const timeoutMs = Math.max(500, Math.min(30000, parseInt(timeoutInput.value, 10) || 5000));
+
+    runBtn.disabled = true;
+    runsInput.disabled = true;
+    delayInput.disabled = true;
+    timeoutInput.disabled = true;
+    buildRows();
+
+    const avgBySourceIndex = [];
+    const rows = resultsBody.querySelectorAll("tr");
+
+    for (let i = 0; i < TIME_SOURCES.length; i++) {
+      statusLine.textContent = `Testing ${TIME_SOURCES[i].name} (${i + 1}/${TIME_SOURCES.length})...`;
+      avgBySourceIndex[i] = await testSource(TIME_SOURCES[i], runs, delayMs, timeoutMs, rows[i]);
+      applyRanking(avgBySourceIndex);
+    }
+
+    statusLine.textContent = "Done. Ranked by average round-trip time (fastest first).";
+    runBtn.disabled = false;
+    runsInput.disabled = false;
+    delayInput.disabled = false;
+    timeoutInput.disabled = false;
+  }
+
+  runBtn.addEventListener("click", runTest);
+
+  buildRows();
+</script>
+
+</body>
+</html>
