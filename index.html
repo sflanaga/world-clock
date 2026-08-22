@@ -9,21 +9,8 @@
   // first paint. Loading this with the rest of the script at the end of the
   // body would flash the default palette on every page load.
   (function () {
+    // Ordered dark -> light, which is also the order they appear in the picker.
     const THEMES = {
-      midnight: {
-        label: "Midnight Slate",
-        note: "cool + deep",
-        vars: {
-          "--bg": "#0b0e14", "--card": "#151a23", "--card-border": "#232a36",
-          "--text": "#eef2f8", "--muted": "#7d8598", "--accent": "#5aa9ff",
-          "--warn": "#e2a13d", "--ok": "#4dbf83",
-          "--hover": "rgba(255,255,255,0.05)", "--shadow": "rgba(0,0,0,0.55)",
-          // Dark-on-accent: white over this blue is only 2.5:1, below the
-          // 4.5:1 minimum. Keeping the accent bright (it needs contrast
-          // against the card too) and darkening the label instead.
-          "--on-accent": "#08111c", "--time-size": "2.4rem"
-        }
-      },
       contrast: {
         label: "High Contrast",
         note: "easiest to read",
@@ -31,21 +18,25 @@
           "--bg": "#000000", "--card": "#101010", "--card-border": "#3a3a3a",
           "--text": "#ffffff", "--muted": "#b4b4b4", "--accent": "#6cb6ff",
           "--warn": "#ffb340", "--ok": "#57d98a",
+          "--card-muted": "#c8c8c8",
           "--hover": "rgba(255,255,255,0.09)", "--shadow": "rgba(0,0,0,0.7)",
           // A pale accent needs dark text on top of it, not white.
           "--on-accent": "#000000", "--time-size": "3rem"
         }
       },
-      daylight: {
-        label: "Daylight",
-        note: "light, for bright rooms",
+      midnight: {
+        label: "Midnight Slate",
+        note: "cool + deep",
         vars: {
-          "--bg": "#f4f2ed", "--card": "#ffffff", "--card-border": "#dcd8d0",
-          "--text": "#1c1f26", "--muted": "#6b7280", "--accent": "#0b64d0",
-          "--warn": "#b45309", "--ok": "#17803d",
-          // Washes must darken rather than lighten once the ground is pale.
-          "--hover": "rgba(0,0,0,0.045)", "--shadow": "rgba(0,0,0,0.14)",
-          "--on-accent": "#ffffff", "--time-size": "2.4rem"
+          "--bg": "#0b0e14", "--card": "#151a23", "--card-border": "#232a36",
+          "--text": "#eef2f8", "--muted": "#7d8598", "--accent": "#5aa9ff",
+          "--warn": "#e2a13d", "--ok": "#4dbf83",
+          "--card-muted": "#a6afc0",
+          "--hover": "rgba(255,255,255,0.05)", "--shadow": "rgba(0,0,0,0.55)",
+          // Dark-on-accent: white over this blue is only 2.5:1, below the
+          // 4.5:1 minimum. Keeping the accent bright (it needs contrast
+          // against the card too) and darkening the label instead.
+          "--on-accent": "#08111c", "--time-size": "2.4rem"
         }
       },
       dusk: {
@@ -55,8 +46,38 @@
           "--bg": "#17130f", "--card": "#221c16", "--card-border": "#35291f",
           "--text": "#f2e8dc", "--muted": "#a1907d", "--accent": "#e0a458",
           "--warn": "#e8823d", "--ok": "#94b566",
+          "--card-muted": "#bfae99",
           "--hover": "rgba(255,255,255,0.05)", "--shadow": "rgba(0,0,0,0.6)",
           "--on-accent": "#17130f", "--time-size": "2.4rem"
+        }
+      },
+      twilight: {
+        label: "Twilight",
+        note: "soft mid-tone",
+        vars: {
+          // Sits between Warm Dusk and Daylight: a lighter ground than Dusk
+          // (L 0.024 vs 0.007) with the brown pulled most of the way out, so
+          // it reads warm-grey rather than sepia, and a dusty blue accent
+          // instead of amber to keep it from drifting back toward Dusk.
+          "--bg": "#2e2a26", "--card": "#3a3532", "--card-border": "#4b4542",
+          "--text": "#f0ece7", "--muted": "#a9a29b", "--accent": "#8fb3d4",
+          "--warn": "#e0a05c", "--ok": "#8fb98c",
+          "--card-muted": "#cfc7bf",
+          "--hover": "rgba(255,255,255,0.055)", "--shadow": "rgba(0,0,0,0.45)",
+          "--on-accent": "#1e1b18", "--time-size": "2.4rem"
+        }
+      },
+      daylight: {
+        label: "Daylight",
+        note: "light, for bright rooms",
+        vars: {
+          "--bg": "#f4f2ed", "--card": "#ffffff", "--card-border": "#dcd8d0",
+          "--text": "#1c1f26", "--muted": "#6b7280", "--accent": "#0b64d0",
+          "--warn": "#b45309", "--ok": "#17803d",
+          "--card-muted": "#4b5563",
+          // Washes must darken rather than lighten once the ground is pale.
+          "--hover": "rgba(0,0,0,0.045)", "--shadow": "rgba(0,0,0,0.14)",
+          "--on-accent": "#ffffff", "--time-size": "2.4rem"
         }
       }
     };
@@ -113,6 +134,7 @@
     --accent: #5aa9ff;
     --warn: #e2a13d;
     --ok: #4dbf83;
+    --card-muted: #a6afc0;            /* secondary text inside cards */
     --hover: rgba(255,255,255,0.05);   /* subtle row/badge wash */
     --shadow: rgba(0,0,0,0.55);
     --on-accent: #ffffff;              /* text drawn on top of --accent */
@@ -313,15 +335,15 @@
   }
   .card .remove:hover { color: var(--warn); }
   .card .label {
-    font-size: 0.95rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: var(--text);
     margin-bottom: 2px;
   }
   .card .tzid {
-    font-size: 0.7rem;
-    color: var(--muted);
-    margin-bottom: 10px;
+    font-size: 0.78rem;
+    color: var(--card-muted);
+    margin-bottom: 12px;
   }
   .card .time {
     font-size: var(--time-size);
@@ -330,9 +352,9 @@
     letter-spacing: 0.02em;
   }
   .card .date {
-    font-size: 0.85rem;
-    color: var(--muted);
-    margin-top: 6px;
+    font-size: 0.95rem;
+    color: var(--card-muted);
+    margin-top: 8px;
   }
   .card .offsets {
     display: flex;
@@ -342,9 +364,9 @@
     flex-wrap: wrap;
   }
   .offset-badge {
-    font-size: 0.7rem;
+    font-size: 0.76rem;
     font-variant-numeric: tabular-nums;
-    color: var(--muted);
+    color: var(--card-muted);
     background: var(--hover);
     border: 1px solid var(--card-border);
     border-radius: 999px;
