@@ -3,16 +3,120 @@
 <head>
 <meta charset="UTF-8">
 <title>World Clock</title>
+
+<script>
+  // Themes live here, in the head, so the saved choice is applied before the
+  // first paint. Loading this with the rest of the script at the end of the
+  // body would flash the default palette on every page load.
+  (function () {
+    const THEMES = {
+      midnight: {
+        label: "Midnight Slate",
+        note: "cool + deep",
+        vars: {
+          "--bg": "#0b0e14", "--card": "#151a23", "--card-border": "#232a36",
+          "--text": "#eef2f8", "--muted": "#7d8598", "--accent": "#5aa9ff",
+          "--warn": "#e2a13d", "--ok": "#4dbf83",
+          "--hover": "rgba(255,255,255,0.05)", "--shadow": "rgba(0,0,0,0.55)",
+          // Dark-on-accent: white over this blue is only 2.5:1, below the
+          // 4.5:1 minimum. Keeping the accent bright (it needs contrast
+          // against the card too) and darkening the label instead.
+          "--on-accent": "#08111c", "--time-size": "2.4rem"
+        }
+      },
+      contrast: {
+        label: "High Contrast",
+        note: "easiest to read",
+        vars: {
+          "--bg": "#000000", "--card": "#101010", "--card-border": "#3a3a3a",
+          "--text": "#ffffff", "--muted": "#b4b4b4", "--accent": "#6cb6ff",
+          "--warn": "#ffb340", "--ok": "#57d98a",
+          "--hover": "rgba(255,255,255,0.09)", "--shadow": "rgba(0,0,0,0.7)",
+          // A pale accent needs dark text on top of it, not white.
+          "--on-accent": "#000000", "--time-size": "3rem"
+        }
+      },
+      daylight: {
+        label: "Daylight",
+        note: "light, for bright rooms",
+        vars: {
+          "--bg": "#f4f2ed", "--card": "#ffffff", "--card-border": "#dcd8d0",
+          "--text": "#1c1f26", "--muted": "#6b7280", "--accent": "#0b64d0",
+          "--warn": "#b45309", "--ok": "#17803d",
+          // Washes must darken rather than lighten once the ground is pale.
+          "--hover": "rgba(0,0,0,0.045)", "--shadow": "rgba(0,0,0,0.14)",
+          "--on-accent": "#ffffff", "--time-size": "2.4rem"
+        }
+      },
+      dusk: {
+        label: "Warm Dusk",
+        note: "low blue light",
+        vars: {
+          "--bg": "#17130f", "--card": "#221c16", "--card-border": "#35291f",
+          "--text": "#f2e8dc", "--muted": "#a1907d", "--accent": "#e0a458",
+          "--warn": "#e8823d", "--ok": "#94b566",
+          "--hover": "rgba(255,255,255,0.05)", "--shadow": "rgba(0,0,0,0.6)",
+          "--on-accent": "#17130f", "--time-size": "2.4rem"
+        }
+      }
+    };
+
+    const KEY = "worldClockTheme";
+    const DEFAULT = "midnight";
+
+    function read() {
+      try {
+        const m = document.cookie.match(/(?:^|; )worldClockTheme=([^;]*)/);
+        const raw = (m ? decodeURIComponent(m[1]) : null) || localStorage.getItem(KEY);
+        if (raw && THEMES[raw]) return raw;
+      } catch (e) { /* private mode / file:// */ }
+      return DEFAULT;
+    }
+
+    function apply(name) {
+      const theme = THEMES[name] || THEMES[DEFAULT];
+      const root = document.documentElement;
+      Object.keys(theme.vars).forEach(k => root.style.setProperty(k, theme.vars[k]));
+      current = THEMES[name] ? name : DEFAULT;
+    }
+
+    function save(name) {
+      try {
+        document.cookie = KEY + "=" + encodeURIComponent(name) +
+          "; max-age=" + (365 * 24 * 60 * 60) + "; path=/; SameSite=Lax";
+        localStorage.setItem(KEY, name);
+      } catch (e) { /* ignore */ }
+    }
+
+    let current = DEFAULT;
+    apply(read());
+
+    window.WorldClockTheme = {
+      THEMES: THEMES,
+      apply: apply,
+      save: save,
+      get current() { return current; }
+    };
+  })();
+</script>
+
 <style>
+  /* Default palette (Midnight Slate). The theme picker overrides these on
+     :root at runtime, so every rule below must read from a variable — a
+     hardcoded colour here would survive the swap and break the light theme. */
   :root {
-    --bg: #0f1115;
-    --card: #1a1d24;
-    --card-border: #2a2e38;
-    --text: #eef0f4;
-    --muted: #8b90a0;
-    --accent: #4da3ff;
+    --bg: #0b0e14;
+    --card: #151a23;
+    --card-border: #232a36;
+    --text: #eef2f8;
+    --muted: #7d8598;
+    --accent: #5aa9ff;
     --warn: #e2a13d;
     --ok: #4dbf83;
+    --hover: rgba(255,255,255,0.05);   /* subtle row/badge wash */
+    --shadow: rgba(0,0,0,0.55);
+    --on-accent: #ffffff;              /* text drawn on top of --accent */
+    --time-size: 2.4rem;
   }
   * { box-sizing: border-box; }
   body {
@@ -81,7 +185,7 @@
   }
   .toggle button.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   /* --- Zone manager (dropdown / multi-select) --- */
@@ -98,7 +202,7 @@
     background: var(--card);
     border: 1px solid var(--card-border);
     border-radius: 10px;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    box-shadow: 0 12px 32px var(--shadow);
     display: flex;
     flex-direction: column;
     z-index: 50;
@@ -139,7 +243,7 @@
   .zone-chip.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .zone-list {
     overflow-y: auto;
@@ -154,7 +258,7 @@
     cursor: pointer;
     font-size: 0.82rem;
   }
-  .zone-item:hover { background: rgba(255,255,255,0.05); }
+  .zone-item:hover { background: var(--hover); }
   .zone-item input[type="checkbox"] {
     accent-color: var(--accent);
     width: 15px;
@@ -220,7 +324,7 @@
     margin-bottom: 10px;
   }
   .card .time {
-    font-size: 2.4rem;
+    font-size: var(--time-size);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -241,7 +345,7 @@
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
-    background: rgba(255,255,255,0.05);
+    background: var(--hover);
     border: 1px solid var(--card-border);
     border-radius: 999px;
     padding: 2px 9px;
@@ -265,6 +369,60 @@
     font-family: ui-monospace, Consolas, monospace;
   }
   .drift { font-variant-numeric: tabular-nums; }
+
+  /* --- Theme picker --- */
+  .theme-manager { position: relative; }
+  .theme-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 250px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px var(--shadow);
+    z-index: 60;
+    overflow: hidden;
+    padding: 4px;
+  }
+  .theme-popover[hidden] { display: none; }
+  .theme-option {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 7px;
+    padding: 8px 9px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .theme-option:hover { background: var(--hover); border-color: transparent; }
+  .theme-option.active { background: var(--hover); }
+  .swatches {
+    display: flex;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--card-border);
+  }
+  .swatches i {
+    width: 13px;
+    height: 20px;
+    display: block;
+  }
+  .theme-text { flex: 1; min-width: 0; }
+  .theme-name { display: block; font-size: 0.82rem; color: var(--text); }
+  .theme-note { display: block; font-size: 0.68rem; color: var(--muted); }
+  .theme-check {
+    color: var(--accent);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    visibility: hidden;
+  }
+  .theme-option.active .theme-check { visibility: visible; }
 
   /* --- Hidden time-source tester / chooser --- */
   .tester-link {
@@ -310,7 +468,7 @@
     border-radius: 6px;
     cursor: pointer;
   }
-  .source-chooser label:hover { background: rgba(255,255,255,0.05); }
+  .source-chooser label:hover { background: var(--hover); }
   .source-chooser input { accent-color: var(--accent); flex-shrink: 0; }
   .source-chooser .src-note { color: var(--muted); font-size: 0.72rem; }
   .tester-log {
@@ -333,7 +491,38 @@
     font-size: 0.75rem;
     color: var(--muted);
     text-align: center;
-    max-width: 500px;
+    max-width: 560px;
+    line-height: 1.6;
+  }
+  footer p { margin: 0 0 12px; }
+  footer p:last-child { margin-bottom: 0; }
+  .sync-explain {
+    color: var(--text);
+    opacity: 0.85;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .sync-explain:empty { display: none; }
+  /* Left-aligned inside the centered footer: ragged-right is far easier to
+     scan line-to-line than centered text once there's more than a sentence. */
+  .how-it-works {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    display: inline-block;
+    text-align: left;
+  }
+  .how-it-works li {
+    position: relative;
+    padding-left: 15px;
+    margin-bottom: 6px;
+  }
+  .how-it-works li:last-child { margin-bottom: 0; }
+  .how-it-works li::before {
+    content: "•";
+    position: absolute;
+    left: 2px;
+    color: var(--card-border);
   }
 </style>
 </head>
@@ -352,6 +541,10 @@
   <div class="toggle">
     <button id="fmt12" class="active">12h</button>
     <button id="fmt24">24h</button>
+  </div>
+  <div class="theme-manager">
+    <button id="themeBtn">Theme ▾</button>
+    <div class="theme-popover" id="themePopover" hidden></div>
   </div>
   <div class="zone-manager">
     <button id="manageZonesBtn">Manage timezones ▾</button>
@@ -394,12 +587,22 @@
 </section>
 
 <footer>
-  True time is fetched every 15 minutes (and on load). On <em>Auto</em> all
-  sources are raced in parallel and the first valid response wins; pick a
-  specific source above to pin it instead. Between syncs the clock ticks
-  locally using the last known offset. If every source fails, the display
-  falls back to your device clock and the status dot turns orange.
-  Your timezones and source choice are saved in this browser.
+  <p class="sync-explain" id="syncExplain"></p>
+  <ul class="how-it-works">
+    <li>All sources are checked at once, three times each — when the page
+        loads, then every 15 minutes.</li>
+    <li>The clock keeps whichever answer should land closest to the real time,
+        then counts the seconds itself until the next check.</li>
+    <li>Some sources only give whole seconds. Those can never be closer than
+        about half a second, however fast they reply — so a slower source that
+        gives fractions of a second usually wins.</li>
+    <li>If nothing answers, the clocks show your device's own time and the
+        dot turns orange.</li>
+  </ul>
+  <p>
+    Open the tester above to see how each source did, or to always use one
+    source you pick. Your timezones and that choice are saved in this browser.
+  </p>
 </footer>
 
 <script>
@@ -932,6 +1135,9 @@
   }
   const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
   const FETCH_TIMEOUT_MS = 6000;
+  const SAMPLES_PER_SOURCE = 3;   // per sync, per source
+  const SAMPLE_GAP_MS = 100;      // spacing between a source's own samples
+  const SYNC_DEADLINE_MS = 8000;  // stop waiting on stragglers, rank what arrived
 
   // Which source to sync from: "auto" races them all, otherwise the pinned
   // source's name. Persisted the same belt-and-braces way as the timezone
@@ -956,6 +1162,7 @@
   let preferredSource = loadPreferredSource();
   let offsetMs = 0;        // serverUTCms - localDeviceMs, applied to local clock
   let lastSyncOk = false;
+  let hasSynced = false;   // false until a sync has ever produced an offset
   let lastErrors = [];
 
   // Bounds an entire async operation to `ms` — not just the initial fetch().
@@ -976,10 +1183,24 @@
     return err.message || String(err);
   }
 
-  // Queries one source. Never rejects — always resolves to a result object,
-  // so a batch of these can be raced/awaited without one failure taking the
-  // others down with it.
-  async function probeSource(source) {
+  // Rough worst-case error of an offset derived from one sample, in ms.
+  // Two independent contributions:
+  //   - Timestamp resolution. A source reporting only whole seconds has
+  //     truncated away the fraction, so its value trails true time by up to
+  //     1 s (~500 ms on average). No latency correction can recover this.
+  //   - Network asymmetry. The midpoint assumption (request and response
+  //     legs took equal time) is wrong by at most rtt/2 in the worst case.
+  // This is why a slow-but-precise source can beat a fast-but-truncated one:
+  // timeapi.io at 200 ms rtt scores ~100, while a whole-second source at
+  // 10 ms rtt scores ~505.
+  function estimateError(roundTripMs, subsecond) {
+    return (subsecond ? 0 : 500) + roundTripMs / 2;
+  }
+
+  // Queries one source once. Never rejects — always resolves to a result
+  // object, so a batch of these can be raced/awaited without one failure
+  // taking the others down with it.
+  async function probeOnce(source) {
     const requestSentAt = Date.now();
     try {
       const data = await withTimeout(async (signal) => {
@@ -1019,6 +1240,47 @@
     }
   }
 
+  // Samples one source several times and keeps its single best sample.
+  // Standard NTP practice: the sample with the lowest round trip is the one
+  // whose midpoint assumption has the least room to be wrong, so picking the
+  // minimum-rtt sample beats averaging — an average would fold slow, badly
+  // skewed samples back into the estimate.
+  async function sampleSource(source) {
+    const attempts = [];
+    for (let i = 0; i < SAMPLES_PER_SOURCE; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, SAMPLE_GAP_MS));
+      attempts.push(await probeOnce(source));
+    }
+
+    const good = attempts.filter(a => a.ok);
+    if (good.length === 0) {
+      return {
+        ok: false,
+        name: source.name,
+        attempts,
+        roundTripMs: attempts[attempts.length - 1].roundTripMs,
+        message: attempts[attempts.length - 1].message
+      };
+    }
+
+    // A source counts as sub-second if any sample showed a fraction: a
+    // precise source can legitimately land on .000 by chance (~1 in 1000),
+    // and one such sample shouldn't demote it to the truncated tier.
+    const subsecond = good.some(a => a.subsecond);
+    const best = good.reduce((a, b) => (b.roundTripMs < a.roundTripMs ? b : a));
+    return {
+      ok: true,
+      name: source.name,
+      attempts,
+      okCount: good.length,
+      bestIndex: attempts.indexOf(best),
+      roundTripMs: best.roundTripMs,
+      offsetMs: best.offsetMs,
+      subsecond,
+      errorEstimate: estimateError(best.roundTripMs, subsecond)
+    };
+  }
+
   function renderErrors() {
     const el = document.getElementById("errorDetails");
     if (!el) return;
@@ -1046,6 +1308,40 @@
     el.textContent = "clock drift: " + (driftSec >= 0 ? "+" : "") + driftSec.toFixed(3) + " s";
   }
 
+  // Plain-language account of which source the clock is currently trusting
+  // and what made it win, so the choice isn't only visible inside the tester.
+  function renderSyncExplain(best, usable) {
+    const el = document.getElementById("syncExplain");
+    if (!el) return;
+
+    if (!best) {
+      el.textContent = "No source answered, so these clocks are showing your " +
+        "device's own time, uncorrected.";
+      return;
+    }
+
+    const within = "should be within " + Math.round(best.errorEstimate) +
+      " ms of the real time";
+
+    if (preferredSource !== "auto") {
+      el.textContent = "Now using " + best.name + " because you picked it — " +
+        within + ". The other sources weren't checked.";
+      return;
+    }
+
+    let text = "Now using " + best.name + " — " + within + ", the best of " +
+      usable.length + " source" + (usable.length === 1 ? "" : "s") + " that answered";
+    const wholeSecondOnly = usable.filter(r => !r.subsecond).length;
+    if (best.subsecond && wholeSecondOnly > 0) {
+      text += ". It gives fractions of a second, while " + wholeSecondOnly +
+        " of the others give only whole seconds";
+    } else if (!best.subsecond) {
+      text += ". None of them gave fractions of a second, so about half a " +
+        "second of error can't be avoided this time";
+    }
+    el.textContent = text + ".";
+  }
+
   function activeSources() {
     if (preferredSource === "auto") return TIME_SOURCES;
     const pinned = TIME_SOURCES.filter(s => s.name === preferredSource);
@@ -1055,55 +1351,82 @@
   }
 
   async function syncTime() {
-    statusText.textContent = "Syncing...";
+    // Nothing is adopted until every source has reported. Adopting the first
+    // arrival and upgrading later made the displayed time visibly jump when
+    // a precise source superseded a truncated one — up to half a second,
+    // which is exactly the error being corrected for. Until then the display
+    // keeps whatever it already had: the device clock on the very first
+    // sync, or the previous sync's offset on periodic re-syncs (never
+    // reverting a good offset just because a refresh is in flight).
+    statusText.textContent = hasSynced
+      ? "Syncing... (holding previous offset)"
+      : "Syncing... (showing device clock)";
     lastErrors = [];
     const syncStartedAt = performance.now();
     const sources = activeSources();
 
     logLine(preferredSource === "auto"
-      ? "sync: racing " + sources.length + " sources in parallel (timeout " + FETCH_TIMEOUT_MS + " ms)"
-      : "sync: pinned to " + preferredSource + " (timeout " + FETCH_TIMEOUT_MS + " ms)");
+      ? "sync: " + sources.length + " sources in parallel, " + SAMPLES_PER_SOURCE +
+        " samples each " + SAMPLE_GAP_MS + " ms apart (timeout " + FETCH_TIMEOUT_MS + " ms)"
+      : "sync: pinned to " + preferredSource + ", " + SAMPLES_PER_SOURCE + " samples");
 
-    // All sources are queried at once and the first valid response wins, so
-    // one slow/hanging source no longer delays the ones behind it — the old
-    // sequential chain paid every failure's full timeout before moving on.
-    const probes = sources.map(probeSource);
+    // Every source is sampled at once (each running its own samples back to
+    // back), so one slow source can't delay the others.
+    const settled = [];
+    const probes = sources.map(source => sampleSource(source).then(result => {
+      settled.push(result);
+      logResult(result);
+      return result;
+    }));
 
-    let winner = null;
-    let failures = [];
-    try {
-      winner = await Promise.any(
-        probes.map(p => p.then(r => (r.ok ? r : Promise.reject(r))))
-      );
-    } catch (aggregate) {
-      // Promise.any only rejects once every probe has settled, so these are
-      // the complete results — safe to report as the final failure list.
-      failures = (aggregate && aggregate.errors) || [];
+    // Waiting on every source means a hung one could hold the display on the
+    // device clock for samples x timeout. The deadline caps that: whatever
+    // has reported by then is what gets ranked.
+    await Promise.race([
+      Promise.all(probes),
+      new Promise(resolve => setTimeout(resolve, SYNC_DEADLINE_MS))
+    ]);
+
+    const results = settled.slice();
+    if (results.length < sources.length) {
+      logLine("  deadline reached at " + SYNC_DEADLINE_MS + " ms — ranking the " +
+        results.length + " of " + sources.length + " sources that reported");
     }
 
-    if (winner) {
-      offsetMs = winner.offsetMs;
-      lastSyncOk = true;
-      statusDot.className = "dot";
-      const elapsedSec = ((performance.now() - syncStartedAt) / 1000).toFixed(3);
-      statusText.textContent = "Synced via " + winner.name + " at " +
-        new Date().toLocaleTimeString("en-US", { hour12: !use24h }) +
-        " in " + elapsedSec + " s";
-      // The losers are still in flight; log them as they land rather than
-      // making the clock wait on responses it has already stopped needing.
-      Promise.all(probes).then(results => {
-        results.forEach(r => logResult(r, r === winner));
-      });
-    } else {
+    const usable = results.filter(r => r.ok);
+    if (usable.length === 0) {
       lastSyncOk = false;
       offsetMs = 0;
       statusDot.className = "dot warn";
       statusText.textContent = "All time sources failed — using device clock";
-      lastErrors = failures.map(f => ({ name: f.name, message: f.message }));
-      failures.forEach(r => logResult(r, false));
+      lastErrors = results.map(r => ({ name: r.name, message: r.message }));
+      logLine("  -> no usable source; falling back to device clock");
+      renderSyncExplain(null, usable);
+    } else {
+      const best = usable.reduce((a, b) => (b.errorEstimate < a.errorEstimate ? b : a));
+      logLine("  -> chose " + best.name + " (est. error ±" +
+        Math.round(best.errorEstimate) + " ms, best of " + usable.length + ")");
+      adoptResult(best, syncStartedAt);
+      hasSynced = true;
+      lastErrors = [];
+      renderSyncExplain(best, usable);
     }
 
     renderErrors();
+    renderDrift();
+    render();
+  }
+
+  // Applies one source's result as the current time reference.
+  function adoptResult(result, syncStartedAt) {
+    offsetMs = result.offsetMs;
+    lastSyncOk = true;
+    statusDot.className = "dot";
+    const elapsedSec = ((performance.now() - syncStartedAt) / 1000).toFixed(3);
+    statusText.textContent = "Synced via " + result.name + " (±" +
+      Math.round(result.errorEstimate) + " ms) at " +
+      new Date().toLocaleTimeString("en-US", { hour12: !use24h }) +
+      " in " + elapsedSec + " s";
     renderDrift();
     render();
   }
@@ -1122,6 +1445,79 @@
     fmt12Btn.classList.remove("active");
     render();
   });
+
+  // ============================================================
+  // Theme picker
+  // ============================================================
+  const themeBtn = document.getElementById("themeBtn");
+  const themePopover = document.getElementById("themePopover");
+
+  function buildThemePicker() {
+    if (!themePopover || !window.WorldClockTheme) return;
+    const { THEMES, current } = window.WorldClockTheme;
+    themePopover.innerHTML = "";
+    Object.keys(THEMES).forEach(key => {
+      const theme = THEMES[key];
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "theme-option" + (key === current ? " active" : "");
+      btn.dataset.theme = key;
+
+      // The swatch strip is the palette itself — page, card, text and accent
+      // in the order they stack visually — so the row previews the theme
+      // rather than just naming it.
+      const swatches = document.createElement("span");
+      swatches.className = "swatches";
+      ["--bg", "--card", "--text", "--accent"].forEach(v => {
+        const chip = document.createElement("i");
+        chip.style.background = theme.vars[v];
+        swatches.appendChild(chip);
+      });
+
+      const text = document.createElement("span");
+      text.className = "theme-text";
+      const name = document.createElement("span");
+      name.className = "theme-name";
+      name.textContent = theme.label;
+      const note = document.createElement("span");
+      note.className = "theme-note";
+      note.textContent = theme.note;
+      text.append(name, note);
+
+      const check = document.createElement("span");
+      check.className = "theme-check";
+      check.textContent = "✓";
+
+      btn.append(swatches, text, check);
+      themePopover.appendChild(btn);
+    });
+  }
+
+  if (themePopover) {
+    themePopover.addEventListener("click", (e) => {
+      const btn = e.target.closest(".theme-option");
+      if (!btn) return;
+      window.WorldClockTheme.apply(btn.dataset.theme);
+      window.WorldClockTheme.save(btn.dataset.theme);
+      buildThemePicker();
+      themePopover.hidden = true;
+    });
+  }
+
+  if (themeBtn) {
+    themeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      themePopover.hidden = !themePopover.hidden;
+    });
+    document.addEventListener("click", (e) => {
+      if (!themePopover.hidden && !themePopover.contains(e.target) && e.target !== themeBtn) {
+        themePopover.hidden = true;
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !themePopover.hidden) themePopover.hidden = true;
+    });
+  }
 
   // ============================================================
   // Time source tester / chooser (hidden panel)
@@ -1159,22 +1555,39 @@
     return String(n).padStart(width);
   }
 
-  function logResult(r, isWinner) {
+  function driftStr(offsetMs) {
+    const driftSec = (-offsetMs / 1000).toFixed(3);
+    return padNum((offsetMs <= 0 ? "+" : "") + driftSec, 7) + "s";
+  }
+
+  function logResult(r) {
     if (r.ok) {
-      const driftSec = (-r.offsetMs / 1000).toFixed(3);
       logLine(
-        (isWinner ? "  WON  " : "  ok   ") + pad(r.name, LOG_NAME_WIDTH) +
-        "  rtt=" + padNum(r.roundTripMs, 5) + "ms" +
-        "  drift=" + padNum((r.offsetMs <= 0 ? "+" : "") + driftSec, 7) + "s" +
-        "  subsec=" + (r.subsecond ? "yes" : "no ")
+        "  ok    " + pad(r.name, LOG_NAME_WIDTH) +
+        "  best_rtt=" + padNum(r.roundTripMs, 5) + "ms" +
+        "  err=±" + padNum(Math.round(r.errorEstimate), 4) + "ms" +
+        "  drift=" + driftStr(r.offsetMs) +
+        "  subsec=" + (r.subsecond ? "yes" : "no ") +
+        "  [" + r.okCount + "/" + r.attempts.length + " ok]"
       );
     } else {
       logLine(
         "  FAIL  " + pad(r.name, LOG_NAME_WIDTH) +
-        "  rtt=" + padNum(r.roundTripMs, 5) + "ms" +
+        "  " + r.attempts.length + " attempts" +
         "  " + r.message
       );
     }
+    // Per-sample breakdown, marking which one was kept and why. Makes the
+    // min-rtt choice auditable instead of having to trust it.
+    r.attempts.forEach((a, i) => {
+      const chosen = r.ok && i === r.bestIndex;
+      logLine(a.ok
+        ? "          #" + (i + 1) + " rtt=" + padNum(a.roundTripMs, 5) + "ms" +
+          "  drift=" + driftStr(a.offsetMs) +
+          "  sub=" + (a.subsecond ? "yes" : "no ") +
+          (chosen ? "   <- kept (lowest rtt)" : "")
+        : "          #" + (i + 1) + " FAIL  " + a.message);
+    });
   }
 
   function buildSourceChooser() {
@@ -1232,14 +1645,16 @@
   if (testAllBtn) {
     testAllBtn.addEventListener("click", async () => {
       testAllBtn.disabled = true;
-      logLine("--- testing all " + TIME_SOURCES.length + " sources in parallel ---");
-      const results = await Promise.all(TIME_SOURCES.map(probeSource));
-      // Fastest first, failures last, so the log reads as a ranking.
+      logLine("--- testing all " + TIME_SOURCES.length + " sources, " +
+        SAMPLES_PER_SOURCE + " samples each ---");
+      const results = await Promise.all(TIME_SOURCES.map(sampleSource));
+      // Ranked by estimated error (not raw speed), failures last — the same
+      // ordering a sync uses to pick its source.
       results
         .slice()
-        .sort((a, b) => (a.ok === b.ok) ? a.roundTripMs - b.roundTripMs : (a.ok ? -1 : 1))
-        .forEach(r => logResult(r, false));
-      logLine("--- test complete ---");
+        .sort((a, b) => (a.ok === b.ok) ? a.errorEstimate - b.errorEstimate : (a.ok ? -1 : 1))
+        .forEach(r => logResult(r));
+      logLine("--- test complete (ranked by estimated error) ---");
       testAllBtn.disabled = false;
     });
   }
@@ -1251,14 +1666,35 @@
   // ============================================================
   // Init
   // ============================================================
+  buildThemePicker();
   buildSourceChooser();
   renderCards();
+  // Paint immediately with the device clock rather than leaving the "--:--:--"
+  // placeholder up until the first sync resolves. offsetMs is still 0 here, so
+  // this is the unsynced device time — which is exactly what should show while
+  // the sources are being queried.
+  render();
   buildZoneList();
   buildCommonZoneChips();
   updateZoneCount();
   syncTime();
   setInterval(syncTime, SYNC_INTERVAL_MS);
-  setInterval(render, 1000);
+
+  // Repaint at the top of each *true* second instead of every 1000 ms from an
+  // arbitrary starting phase. A plain 1 s interval lands wherever the first
+  // tick happened to fall, so the displayed second could sit up to a full
+  // second stale — swamping the sub-100 ms accuracy the sync works to achieve.
+  // Polling cheaply and only rendering when the second actually changes keeps
+  // the flip within one poll interval of the real boundary, and re-aligns
+  // automatically whenever a sync shifts offsetMs.
+  let lastRenderedSecond = -1;
+  setInterval(() => {
+    const second = Math.floor((Date.now() + offsetMs) / 1000);
+    if (second !== lastRenderedSecond) {
+      lastRenderedSecond = second;
+      render();
+    }
+  }, 20);
 </script>
 
 </body>
