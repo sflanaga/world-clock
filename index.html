@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>World Clock</title>
 
 <script>
@@ -144,6 +145,7 @@
   body {
     margin: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -346,7 +348,7 @@
     margin-bottom: 12px;
   }
   .card .time {
-    font-size: var(--time-size);
+    font-size: min(var(--time-size), 13vw);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -545,6 +547,128 @@
     position: absolute;
     left: 2px;
     color: var(--card-border);
+  }
+  /* --- Phones -------------------------------------------------------
+     One column, thumb-sized targets, and the two popovers become bottom
+     sheets anchored to the viewport instead of to their buttons — anchored
+     they hang off the edge of a narrow screen and drag the whole page
+     sideways. */
+  @media (max-width: 640px) {
+    body { padding: 20px 12px 32px; }
+    h1 { margin-bottom: 18px; }
+
+    /* Status on its own line, the four controls as a 2x2 grid under it. */
+    .controls {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .status { grid-column: 1 / -1; justify-content: center; }
+    .controls > #syncBtn,
+    .controls > .toggle,
+    .controls > .theme-manager,
+    .controls > .zone-manager { width: 100%; }
+    .theme-manager > #themeBtn,
+    .zone-manager > #manageZonesBtn { width: 100%; }
+    .toggle button { flex: 1; }
+
+    /* 44px is the smallest reliable touch target. */
+    .controls button,
+    .zone-footer button,
+    .tester-row button {
+      min-height: 44px;
+      padding: 10px 16px;
+      font-size: 0.9rem;
+    }
+
+    .clocks { width: 100%; gap: 12px; }
+    .card {
+      width: 100%;
+      min-width: 0;
+      padding: 20px 16px;
+    }
+    /* Was an ~18px tap target in the corner of the card. */
+    .card .remove {
+      top: 4px;
+      right: 4px;
+      padding: 8px 12px;
+      font-size: 1rem;
+    }
+
+    .theme-popover,
+    .zone-popover {
+      position: fixed;
+      top: auto;
+      bottom: 0;
+      left: 8px;
+      right: 8px;
+      width: auto;
+      max-height: 80dvh;
+      transform: none;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      box-shadow: 0 -10px 40px var(--shadow);
+      padding-bottom: max(4px, env(safe-area-inset-bottom));
+    }
+    /* Base rule clips overflow; as a sheet the theme list has to be able to
+       scroll on a short phone. */
+    .theme-popover { overflow-y: auto; }
+    /* The quick-pick chips alone can eat the whole sheet, leaving three rows
+       of the searchable list visible. Cap them and let them scroll. */
+    .common-zones { max-height: 132px; overflow-y: auto; }
+
+    /* iOS Safari zooms the whole page when you focus an input smaller than
+       16px, and never zooms back out. */
+    .zone-search-wrap input { font-size: 16px; }
+    .zone-item {
+      padding: 11px 14px;
+      gap: 12px;
+      font-size: 0.88rem;
+    }
+    .zone-item input[type="checkbox"] { width: 18px; height: 18px; }
+    .zone-chip { padding: 8px 12px; font-size: 0.78rem; }
+    .theme-option { padding: 11px 9px; }
+
+    .tester { padding: 12px; }
+    .tester-log { font-size: 0.66rem; }
+    .source-chooser label { padding: 9px 6px; }
+
+    /* Set on <body> while a sheet is open: freeze the page behind it and dim
+       it, so the sheet reads as a layer rather than as floating debris. */
+    body.sheet-open { overflow: hidden; }
+    body.sheet-open::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 40;
+    }
+  }
+
+  /* Touch devices have no real hover: Safari leaves the last-tapped element
+     stuck in its hover state until you tap something else. Neutralize hover
+     there and let :active and :focus-visible carry the feedback instead. */
+  @media (hover: none) {
+    button:hover { border-color: var(--card-border); }
+    .zone-chip:hover { border-color: var(--card-border); }
+    .zone-chip.active { border-color: var(--accent); }
+    .zone-item:hover,
+    .theme-option:hover,
+    .source-chooser label:hover { background: none; }
+    .theme-option.active { background: var(--hover); }
+    .tester-link:hover { color: var(--muted); border-bottom-color: var(--card-border); }
+    .card .remove:hover { color: var(--muted); }
+  }
+  button:active,
+  .zone-chip:active { border-color: var(--accent); }
+  button:focus-visible,
+  .zone-chip:focus-visible,
+  .zone-item:focus-visible,
+  .tester-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 </style>
 </head>
@@ -1048,7 +1172,7 @@
     syncZoneCheckboxes();
     syncCommonZoneChips();
     updateZoneCount();
-    zoneSearch.focus();
+    if (!window.matchMedia("(pointer: coarse)").matches) zoneSearch.focus();
   }
 
   function closeZonePopover() {
@@ -1540,6 +1664,21 @@
       if (e.key === "Escape" && !themePopover.hidden) themePopover.hidden = true;
     });
   }
+
+  // On phones the popovers are bottom sheets, and the page behind one must not
+  // scroll while it's open. Watching the `hidden` attribute keeps this out of
+  // the four separate places that open and close them.
+  (function lockScrollWhileSheetOpen() {
+    const sheets = ["zonePopover", "themePopover"]
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+    const update = () => {
+      document.body.classList.toggle("sheet-open", sheets.some(el => !el.hidden));
+    };
+    const observer = new MutationObserver(update);
+    sheets.forEach(el => observer.observe(el, { attributes: true, attributeFilter: ["hidden"] }));
+    update();
+  })();
 
   // ============================================================
   // Time source tester / chooser (hidden panel)
