@@ -495,6 +495,24 @@
   .source-chooser label:hover { background: var(--hover); }
   .source-chooser input { accent-color: var(--accent); flex-shrink: 0; }
   .source-chooser .src-note { color: var(--muted); font-size: 0.72rem; }
+  .interval-chooser {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .interval-chooser button {
+    background: var(--bg);
+    color: var(--muted);
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+  }
+  .interval-chooser button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
   .tester-log {
     margin: 0;
     max-height: 280px;
@@ -629,6 +647,7 @@
     }
     .zone-item input[type="checkbox"] { width: 18px; height: 18px; }
     .zone-chip { padding: 8px 12px; font-size: 0.78rem; }
+    .interval-chooser button { min-height: 40px; padding: 9px 14px; font-size: 0.78rem; }
     .theme-option { padding: 11px 9px; }
 
     .tester { padding: 12px; }
@@ -721,6 +740,12 @@
   </div>
   <div class="source-chooser" id="sourceChooser"></div>
   <div class="tester-row">
+    <strong>Sync interval</strong>
+    <span class="tester-hint">How often the sources are re-checked. &ldquo;Sync now&rdquo;
+      still works whatever this is set to.</span>
+  </div>
+  <div class="interval-chooser" id="intervalChooser"></div>
+  <div class="tester-row">
     <button id="testAllBtn">Test all sources</button>
     <button id="clearLogBtn">Clear log</button>
     <span class="tester-hint">
@@ -736,7 +761,7 @@
   <p class="sync-explain" id="syncExplain"></p>
   <ul class="how-it-works">
     <li>All sources are checked at once, three times each — when the page
-        loads, then every 15 minutes.</li>
+        loads, <span id="intervalText">then every 15 minutes</span>.</li>
     <li>The clock keeps whichever answer should land closest to the real time,
         then counts the seconds itself until the next check.</li>
     <li>Some sources only give whole seconds. Those can never be closer than
@@ -1279,7 +1304,16 @@
       }
     });
   }
-  const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+  const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes, the default
+  // 0 = never re-check on a timer; "Sync now" is then the only trigger.
+  const SYNC_INTERVAL_CHOICES = [
+    { label: "1 min", ms: 60 * 1000 },
+    { label: "5 min", ms: 5 * 60 * 1000 },
+    { label: "15 min", ms: SYNC_INTERVAL_MS },
+    { label: "30 min", ms: 30 * 60 * 1000 },
+    { label: "1 hour", ms: 60 * 60 * 1000 },
+    { label: "Manual only", ms: 0 }
+  ];
   const FETCH_TIMEOUT_MS = 6000;
   const SAMPLES_PER_SOURCE = 3;   // per sync, per source
   const SAMPLE_GAP_MS = 100;      // spacing between a source's own samples
@@ -1289,13 +1323,19 @@
   // source's name. Persisted the same belt-and-braces way as the timezone
   // list (cookie + localStorage) since cookies don't survive file:// pages.
   const SOURCE_PREF_KEY = "worldClockTimeSource";
+  const INTERVAL_PREF_KEY = "worldClockSyncInterval";
+
+  // A pseudo-source: don't touch the network at all, and treat the device's
+  // own clock as already correct (it usually is, if the OS runs NTP/chrony).
+  const DEVICE_SOURCE = "device";
 
   function loadPreferredSource() {
     try {
       const raw = getCookie(SOURCE_PREF_KEY) || localStorage.getItem(SOURCE_PREF_KEY);
       // Only honor a pinned name that still exists — the same-origin source
       // disappears on file://, and source names can change between versions.
-      if (raw === "auto" || (raw && TIME_SOURCES.some(s => s.name === raw))) return raw;
+      if (raw === "auto" || raw === DEVICE_SOURCE ||
+          (raw && TIME_SOURCES.some(s => s.name === raw))) return raw;
     } catch (e) { /* ignore corrupt storage */ }
     return "auto";
   }
@@ -1305,7 +1345,25 @@
     try { localStorage.setItem(SOURCE_PREF_KEY, name); } catch (e) { /* ignore */ }
   }
 
+  function loadSyncInterval() {
+    try {
+      const raw = getCookie(INTERVAL_PREF_KEY) || localStorage.getItem(INTERVAL_PREF_KEY);
+      const ms = Number(raw);
+      // Only honor a value that's still one of the offered choices, so a
+      // stale or hand-edited number can't leave the page polling every 50 ms.
+      if (raw !== null && raw !== "" && SYNC_INTERVAL_CHOICES.some(c => c.ms === ms)) return ms;
+    } catch (e) { /* ignore corrupt storage */ }
+    return SYNC_INTERVAL_MS;
+  }
+
+  function saveSyncInterval(ms) {
+    setCookie(INTERVAL_PREF_KEY, String(ms), 365);
+    try { localStorage.setItem(INTERVAL_PREF_KEY, String(ms)); } catch (e) { /* ignore */ }
+  }
+
   let preferredSource = loadPreferredSource();
+  let syncIntervalMs = loadSyncInterval();
+  let syncTimer = null;
   let offsetMs = 0;        // serverUTCms - localDeviceMs, applied to local clock
   let lastSyncOk = false;
   let hasSynced = false;   // false until a sync has ever produced an offset
@@ -1450,6 +1508,12 @@
       el.textContent = "";
       return;
     }
+    // In device-clock mode the offset is 0 by assumption, not by
+    // measurement — printing "+0.000 s" would read as a verified result.
+    if (preferredSource === DEVICE_SOURCE) {
+      el.textContent = "clock drift: not measured";
+      return;
+    }
     const driftSec = -offsetMs / 1000;
     el.textContent = "clock drift: " + (driftSec >= 0 ? "+" : "") + driftSec.toFixed(3) + " s";
   }
@@ -1488,6 +1552,61 @@
     el.textContent = text + ".";
   }
 
+  // Re-arms the periodic sync. Called on load and whenever the interval or
+  // the source changes; the device-clock source has nothing to re-check, so
+  // it runs no timer at all.
+  function scheduleSync() {
+    if (syncTimer !== null) {
+      clearInterval(syncTimer);
+      syncTimer = null;
+    }
+    if (preferredSource !== DEVICE_SOURCE && syncIntervalMs > 0) {
+      syncTimer = setInterval(syncTime, syncIntervalMs);
+    }
+    renderIntervalText();
+  }
+
+  function intervalLabel(ms) {
+    const choice = SYNC_INTERVAL_CHOICES.filter(c => c.ms === ms)[0];
+    return choice ? choice.label : Math.round(ms / 60000) + " min";
+  }
+
+  function renderIntervalText() {
+    const el = document.getElementById("intervalText");
+    if (!el) return;
+    if (preferredSource === DEVICE_SOURCE) {
+      el.textContent = "but not right now: you've picked the device clock, so " +
+        "no source is being contacted";
+    } else if (syncIntervalMs > 0) {
+      el.textContent = "then every " + intervalLabel(syncIntervalMs);
+    } else {
+      el.textContent = "then not again until you press \u201cSync now\u201d";
+    }
+  }
+
+  // Skips the network entirely and takes the device clock as truth, which is
+  // what you want when the OS is already disciplined by NTP. offsetMs of 0 is
+  // exactly that: no correction applied.
+  function adoptDeviceClock() {
+    offsetMs = 0;
+    lastSyncOk = true;
+    hasSynced = true;
+    lastErrors = [];
+    statusDot.className = "dot";
+    statusText.textContent = "Using this device's clock, assumed already synced";
+    logLine("source: device clock — no network check, offset held at 0 ms");
+    const el = document.getElementById("syncExplain");
+    if (el) {
+      el.textContent = "These clocks are showing your device's own time, " +
+        "uncorrected, because you picked the device clock as the source. " +
+        "No time source is being contacted; accuracy is whatever your " +
+        "operating system's clock already is.";
+    }
+    renderErrors();
+    renderDrift();
+    render();
+  }
+
   function activeSources() {
     if (preferredSource === "auto") return TIME_SOURCES;
     const pinned = TIME_SOURCES.filter(s => s.name === preferredSource);
@@ -1497,6 +1616,11 @@
   }
 
   async function syncTime() {
+    if (preferredSource === DEVICE_SOURCE) {
+      adoptDeviceClock();
+      return;
+    }
+
     // Nothing is adopted until every source has reported. Adopting the first
     // arrival and upgrading later made the displayed time visibly jump when
     // a precise source superseded a truncated one — up to half a second,
@@ -1758,6 +1882,10 @@
       value: "auto",
       label: "Auto (race all sources, first valid response wins)",
       note: TIME_SOURCES.length + " sources"
+    }, {
+      value: DEVICE_SOURCE,
+      label: "This device's clock (assume it's already synced)",
+      note: "no network — trusts your OS clock, e.g. NTP"
     }].concat(TIME_SOURCES.map(s => ({
       value: s.name,
       label: s.name,
@@ -1789,7 +1917,38 @@
       preferredSource = e.target.value;
       savePreferredSource(preferredSource);
       logLine("source preference set to: " + preferredSource);
+      // The source decides whether a timer runs at all, so re-arm before
+      // syncing rather than after.
+      scheduleSync();
       syncTime();
+    });
+  }
+
+  const intervalChooser = document.getElementById("intervalChooser");
+
+  function buildIntervalChooser() {
+    if (!intervalChooser) return;
+    intervalChooser.innerHTML = "";
+    SYNC_INTERVAL_CHOICES.forEach(choice => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = choice.label;
+      btn.dataset.ms = String(choice.ms);
+      btn.className = choice.ms === syncIntervalMs ? "active" : "";
+      intervalChooser.appendChild(btn);
+    });
+  }
+
+  if (intervalChooser) {
+    intervalChooser.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      syncIntervalMs = Number(btn.dataset.ms);
+      saveSyncInterval(syncIntervalMs);
+      buildIntervalChooser();
+      scheduleSync();
+      logLine("sync interval set to: " + intervalLabel(syncIntervalMs) +
+        (syncIntervalMs > 0 ? "" : " (timer off)"));
     });
   }
 
@@ -1829,6 +1988,7 @@
   // ============================================================
   buildThemePicker();
   buildSourceChooser();
+  buildIntervalChooser();
   renderCards();
   // Paint immediately with the device clock rather than leaving the "--:--:--"
   // placeholder up until the first sync resolves. offsetMs is still 0 here, so
@@ -1839,7 +1999,7 @@
   buildCommonZoneChips();
   updateZoneCount();
   syncTime();
-  setInterval(syncTime, SYNC_INTERVAL_MS);
+  scheduleSync();
 
   // Repaint at the top of each *true* second instead of every 1000 ms from an
   // arbitrary starting phase. A plain 1 s interval lands wherever the first
