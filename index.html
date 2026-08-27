@@ -336,6 +336,14 @@
     cursor: pointer;
   }
   .card .remove:hover { color: var(--warn); }
+  /* The card for the browser's own timezone. The second ring is a box-shadow
+     rather than a thicker border because box-shadow takes up no layout space
+     — a 2px border would make this card 2px larger than its neighbours. */
+  .card.local {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .card.local .label { color: var(--accent); }
   .card .label {
     font-size: 1.05rem;
     font-weight: 600;
@@ -995,16 +1003,39 @@
     return sign + hh + ":" + mm;
   }
 
+  // Two ids can name the same zone (US/Central and America/Chicago). Round-
+  // tripping through Intl resolves most such aliases to one canonical id, so
+  // they compare equal here without an alias table of our own.
+  function canonicalZone(tz) {
+    try {
+      return new Intl.DateTimeFormat("en-US", { timeZone: tz }).resolvedOptions().timeZone;
+    } catch (e) {
+      return tz;
+    }
+  }
+
+  function localZone() {
+    try {
+      return new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function renderCards() {
     clocksEl.innerHTML = "";
     if (selectedZones.length === 0) {
       clocksEl.innerHTML = '<div class="empty-state">No timezones selected — click "Manage timezones" to add some.</div>';
       return;
     }
+    const here = canonicalZone(localZone());
     selectedZones.forEach(tz => {
       const { city, country } = zoneParts(tz);
       const card = document.createElement("div");
-      card.className = "card";
+      // Matched on zone identity, not on offset: half the world shares your
+      // UTC offset today and won't next month, but only one of these cards is
+      // actually the zone this browser is in.
+      card.className = here && canonicalZone(tz) === here ? "card local" : "card";
       card.dataset.tz = tz;
       card.innerHTML = `
         <button class="remove" title="Remove" data-remove-tz="${tz}">&times;</button>
