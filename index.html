@@ -382,6 +382,70 @@
     border-radius: 999px;
     padding: 2px 9px;
   }
+  /* --- List view -----------------------------------------------------
+     Same cards, re-laid-out as table rows. The column tracks live on the
+     container and each row opts into them with subgrid, so the columns line
+     up down the whole list instead of every row sizing itself. */
+  .clocks.list-view {
+    display: grid;
+    /* The middle track takes the slack, not the first one. With `1fr` on the
+       zone column it swallowed every spare pixel and shoved the time hard
+       against the badges; giving the slack to the time column instead splits
+       the empty space evenly on both sides of it. */
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    width: 100%;
+    max-width: 760px;
+  }
+  .clocks.list-view .card {
+    grid-column: 1 / -1;
+    display: grid;
+    /* Fallback first: browsers without subgrid drop the line below and keep
+       these tracks — same shape, just not aligned row to row. */
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: 20px;
+    text-align: left;
+    min-width: 0;
+    padding: 12px 42px 12px 16px;  /* right padding clears the remove button */
+  }
+  .clocks.list-view .label { grid-column: 1; grid-row: 1; margin-bottom: 0; }
+  .clocks.list-view .tzid { grid-column: 1; grid-row: 2; margin-bottom: 0; }
+  .clocks.list-view .time {
+    grid-column: 2;
+    grid-row: 1;
+    /* Scaled from the theme's size rather than fixed, so High Contrast stays
+       bigger here too. */
+    font-size: calc(var(--time-size) * 0.66);
+    /* The column is an `auto` track shared by every row (subgrid), so it ends
+       up as wide as the longest *date* — "Thu, Aug 27 · GMT+5:30" — which is
+       wider than any time. Right-aligning left the times hugging the edge
+       with dead space beside them; centering sits them over the dates.
+       Every time string in a given format is the same width, so this stays
+       steady from row to row and second to second. */
+    text-align: center;
+  }
+  .clocks.list-view .date {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
+    text-align: center;
+  }
+  .clocks.list-view .offsets {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    margin-top: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .clocks.list-view .remove {
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+  }
+
   .empty-state {
     color: var(--muted);
     font-size: 0.9rem;
@@ -592,6 +656,9 @@
       margin-bottom: 18px;
     }
     .status { grid-column: 1 / -1; justify-content: center; }
+    /* Odd number of controls: let the most-used one take the last row whole
+       rather than leaving a stranded half. */
+    .controls > .zone-manager { grid-column: 1 / -1; }
     .controls > #syncBtn,
     .controls > .toggle,
     .controls > .theme-manager,
@@ -610,6 +677,22 @@
     }
 
     .clocks { width: 100%; gap: 12px; }
+    .clocks.list-view { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+    .clocks.list-view .card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 12px;
+      padding: 12px 46px 12px 14px;
+    }
+    .clocks.list-view .time { font-size: calc(var(--time-size) * 0.55); }
+    /* Three columns don't fit a phone; the badges get their own row. */
+    .clocks.list-view .offsets {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      margin-top: 8px;
+    }
     .card {
       width: 100%;
       min-width: 0;
@@ -714,6 +797,10 @@
   <div class="toggle">
     <button id="fmt12" class="active">12h</button>
     <button id="fmt24">24h</button>
+  </div>
+  <div class="toggle">
+    <button id="viewCards" class="active">Cards</button>
+    <button id="viewList">List</button>
   </div>
   <div class="theme-manager">
     <button id="themeBtn">Theme ▾</button>
@@ -1261,6 +1348,8 @@
   const syncBtn = document.getElementById("syncBtn");
   const fmt12Btn = document.getElementById("fmt12");
   const fmt24Btn = document.getElementById("fmt24");
+  const viewCardsBtn = document.getElementById("viewCards");
+  const viewListBtn = document.getElementById("viewList");
 
   // Note on the "read the Date response header" approach: browsers only
   // expose a small set of CORS-safelisted response headers to JS on
@@ -1390,6 +1479,32 @@
   function saveSyncInterval(ms) {
     setCookie(INTERVAL_PREF_KEY, String(ms), 365);
     try { localStorage.setItem(INTERVAL_PREF_KEY, String(ms)); } catch (e) { /* ignore */ }
+  }
+
+  const VIEW_PREF_KEY = "worldClockView";
+
+  function loadView() {
+    try {
+      const raw = getCookie(VIEW_PREF_KEY) || localStorage.getItem(VIEW_PREF_KEY);
+      if (raw === "cards" || raw === "list") return raw;
+    } catch (e) { /* ignore corrupt storage */ }
+    return "cards";
+  }
+
+  function saveView(name) {
+    setCookie(VIEW_PREF_KEY, name, 365);
+    try { localStorage.setItem(VIEW_PREF_KEY, name); } catch (e) { /* ignore */ }
+  }
+
+  let view = loadView();
+
+  // Both views render the same cards from the same code; only the container's
+  // layout changes, so nothing here has to touch render() or renderCards().
+  function applyView(name) {
+    view = name;
+    clocksEl.classList.toggle("list-view", name === "list");
+    if (viewCardsBtn) viewCardsBtn.classList.toggle("active", name === "cards");
+    if (viewListBtn) viewListBtn.classList.toggle("active", name === "list");
   }
 
   let preferredSource = loadPreferredSource();
@@ -1747,6 +1862,11 @@
     render();
   });
 
+  if (viewCardsBtn && viewListBtn) {
+    viewCardsBtn.addEventListener("click", () => { applyView("cards"); saveView("cards"); });
+    viewListBtn.addEventListener("click", () => { applyView("list"); saveView("list"); });
+  }
+
   // ============================================================
   // Theme picker
   // ============================================================
@@ -2017,6 +2137,7 @@
   // ============================================================
   // Init
   // ============================================================
+  applyView(view);
   buildThemePicker();
   buildSourceChooser();
   buildIntervalChooser();
